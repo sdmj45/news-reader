@@ -43,7 +43,7 @@ nothing that can run up a bill because there is no meter.
 |---|---|---|---|
 | Scheduled jobs | GitHub Actions | **Unlimited** on public repos; 2,000 Linux min/month on private | ~3 min × 8 runs/day ≈ 720 min/month |
 | Hosting | GitHub Pages | Free on public repos. 1 GB site, 100 GB/month bandwidth (soft), 10 builds/hour (soft) | ~1 MB site, ~400 kB of data |
-| Translation | MyMemory | No key. ~5,000 characters/day anonymous, ~50,000 with a contact address | ~80 headlines/run |
+| Translation | MyMemory | No key. ~5,000 characters/day anonymous, ~50,000 with a contact address | see §3b |
 | News sources | RSS + GDELT | Free and public | 29 feeds |
 
 **No payment method is required for any of them.**
@@ -56,26 +56,68 @@ the database. If you want it private: Actions still works inside 2,000 minutes/m
 to 4 runs/day), but GitHub Pages on a private repo needs a paid plan, so host the `dist/`
 output on Cloudflare Pages instead (§5).
 
+## 3b. How many headlines actually get translated
+
+The provider counts **characters**, not articles, and an average headline is 77 of them
+(measured on real data). The workflow runs eight times a day, so:
+
+| | Daily allowance | Per run | Headlines/day |
+|---|---|---|---|
+| Anonymous | ~5,000 chars | 600 | **~65** |
+| With `TRANSLATE_CONTACT_EMAIL` | ~50,000 chars | 6,000 | **~650** |
+
+The workflow picks the right per-run budget automatically from whether that variable is set.
+
+**Descriptions are not translated by default.** A description averages 260 characters against
+a headline's 77, so including them would cut coverage from ~650 headlines a day to ~150
+headline-plus-description pairs. Set `TRANSLATE_DESCRIPTIONS=true` if you prefer the
+opposite trade.
+
+When the allowance does run out, the pass stops immediately, keeps everything it already
+paid for, and says so in the run summary. Articles are never re-translated, so the quota
+only ever goes on new headlines.
+
 ## 3. Setting it up
 
+**Step 1 — create an empty public repository.** On <https://github.com/new>: name it
+`news-reader`, set it **Public**, and add no README, no .gitignore and no licence (this
+repository already has them).
+
+**Step 2 — push.**
+
 ```bash
-# 1. Create a GitHub repository and push
-gh repo create news-reader --public --source=. --push
-# or: git remote add origin git@github.com:<you>/news-reader.git && git push -u origin main
-
-# 2. Enable Pages: Settings → Pages → Source: "GitHub Actions"
-
-# 3. Optional but recommended — raise the free translation quota 10×.
-#    This is a contact address, not a credential; MyMemory documents it as the way to lift
-#    the anonymous limit, and it needs no registration.
-#    Settings → Secrets and variables → Actions → Variables → New variable
-#      Name:  TRANSLATE_CONTACT_EMAIL
-#      Value: your@email
-
-# 4. Run it once by hand: Actions → "collect and publish" → Run workflow
+cd /home/jian/dev/project/examples/perso/news-reader
+git remote add origin https://github.com/<your-username>/news-reader.git
+git push -u origin main
 ```
 
-The site appears at `https://<you>.github.io/news-reader/` a few minutes later.
+**Step 3 — raise the translation quota tenfold.** Optional, free, 30 seconds, and the
+difference between ~65 and ~650 translated headlines a day. It is a contact address, not a
+credential: MyMemory documents it as the way to lift the anonymous limit, with no
+registration and no verification.
+
+> Repository → Settings → Secrets and variables → Actions → **Variables** tab → New variable
+> Name `TRANSLATE_CONTACT_EMAIL`, value your email address.
+
+**Step 4 — run it.** Actions tab → "collect and publish" → **Run workflow**.
+
+The workflow enables Pages itself on that first run. It takes about three minutes, and the
+site appears at `https://<your-username>.github.io/news-reader/`.
+
+If the Actions tab shows nothing, GitHub has not enabled workflows for a freshly pushed
+repository yet — reload the page, or make any commit.
+
+### What the first run looks like
+
+| | |
+|---|---|
+| Collection | ~20 s, 29 sources, ~1,300 articles |
+| Translation | ~65 headlines anonymously, ~650 with the contact address |
+| Site | ~400 articles, 353 kB of JSON, 121 kB over the wire |
+
+The first run translates only a fraction of the articles. That is the quota working as
+designed, not a failure: every three hours the next run translates the next batch, and
+nothing is ever translated twice, so coverage builds up over the first day or two.
 
 ### Before you make it public, read this
 

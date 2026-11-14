@@ -58,11 +58,27 @@ jobs:
       PERSONAL_USE_MODE: "true"
       TRANSLATOR: mymemory
       TRANSLATE_INTO: zh
-      TRANSLATE_MAX_PER_RUN: "80"
-      # Not a credential: MyMemory documents this as a contact address that raises the
-      # anonymous quota from ~5,000 to ~50,000 characters a day. Set it as a repository
-      # variable (Settings → Secrets and variables → Actions → Variables) if you want that.
+      TRANSLATE_MAX_PER_RUN: "40"
+
+      # Not a credential: MyMemory documents this as a contact address that raises the free
+      # quota from ~5,000 to ~50,000 characters a day. No registration, no verification.
+      # Set it under Settings → Secrets and variables → Actions → Variables.
       TRANSLATE_CONTACT_EMAIL: ${{ vars.TRANSLATE_CONTACT_EMAIL }}
+
+      # The budget that actually binds, because the provider counts characters, not
+      # articles. Measured: an average headline is 77 characters. This workflow runs eight
+      # times a day, so the day's allowance divided by eight is:
+      #
+      #   anonymous            5,000 / 8 =   625 chars per run  (~8 headlines)
+      #   with contact address 50,000 / 8 = 6,250 chars per run (~80 headlines)
+      #
+      # Set from whether the address is configured, rather than assuming the generous case:
+      # a fixed 6,000 without it would hit HTTP 429 on the second run of every day.
+      TRANSLATE_MAX_CHARACTERS_PER_RUN: ${{ vars.TRANSLATE_CONTACT_EMAIL && '6000' || '600' }}
+
+      # Descriptions cost 260 characters against a headline's 77, which would cut the day's
+      # coverage from ~650 headlines to ~150 pairs. Headlines are the product.
+      TRANSLATE_DESCRIPTIONS: "false"
       SQLITE_PATH: data/news.db
 
     steps:
@@ -133,6 +149,10 @@ jobs:
           npm run build
 
       - uses: actions/configure-pages@v5
+        with:
+          # Turns Pages on for the repository on the first run, so the only manual step is
+          # creating the repository. Harmless once it is already enabled.
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: frontend/dist

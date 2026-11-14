@@ -243,3 +243,65 @@ class TestBudget:
             seeded, MyMemoryTranslator(client), target_languages=("zh",), max_per_run=4
         )
         assert route.call_count == first, "a stored translation must never be requested again"
+
+
+class TestCharacterBudget:
+    """The provider's limit is in characters, so that is what has to be enforced."""
+
+    @respx.mock
+    async def test_the_run_stops_at_the_character_ceiling(self, client, seeded):
+        route = respx.get(ENDPOINT).mock(return_value=httpx.Response(200, json=ok_body("标题")))
+        # Each fixture headline is ~20 characters, so 50 pays for two and refuses the third.
+        report = await run_translation(
+            seeded, MyMemoryTranslator(client),
+            target_languages=("zh",), max_per_run=4, max_characters=50,
+        )
+        assert report.characters_sent <= 50
+        assert report.articles_skipped_budget > 0
+        assert route.call_count < 4
+
+    @respx.mock
+    async def test_descriptions_are_not_translated_unless_asked(self, client):
+        route = respx.get(ENDPOINT).mock(return_value=httpx.Response(200, json=ok_body("标题")))
+        repository = SQLiteArticleRepository(":memory:")
+        article = make_article("Un titre français", "https://lemonde.fr/1", language="fr")
+        article.summary_reuse_allowed = True
+        article.original_description = "Une description assez longue " * 5
+        repository.upsert_articles([article])
+
+        await run_translation(
+            repository, MyMemoryTranslator(client), target_languages=("zh",), max_per_run=4
+        )
+        # One call, for the headline. A description is 260 characters against a headline's
+        # 77, so including it by default would cut a day's quota by three quarters.
+        assert route.call_count == 1
+        stored = repository.list_articles(ArticleQuery()).articles[0]
+        assert stored.translated_title["zh"] == "标题"
+        assert stored.translated_summary == {}
+        repository.close()
+
+    @respx.mock
+    async def test_descriptions_are_translated_when_asked(self, client):
+        route = respx.get(ENDPOINT).mock(return_value=httpx.Response(200, json=ok_body("中文")))
+        repository = SQLiteArticleRepository(":memory:")
+        article = make_article("Un titre français", "https://lemonde.fr/1", language="fr")
+        article.summary_reuse_allowed = True
+        article.original_description = "Une description."
+        repository.upsert_articles([article])
+
+        await run_translation(
+            repository, MyMemoryTranslator(client), target_languages=("zh",),
+            max_per_run=4, translate_descriptions=True,
+        )
+        assert route.call_count == 2
+        stored = repository.list_articles(ArticleQuery()).articles[0]
+        assert stored.translated_summary["zh"] == "中文"
+        repository.close()
+
+    def test_the_default_budget_fits_the_free_anonymous_quota(self):
+        # MyMemory allows ~5,000 characters a day anonymously. The workflow runs eight times
+        # a day, so a default above ~625 per run guarantees a 429 every day.
+        from app.core.config import Settings
+
+        assert Settings().translate_max_characters_per_run <= 625
+        assert Settings().translate_descriptions is False

@@ -56,12 +56,16 @@ async def translate_article(
     target_language: str,
     budget: TranslationBudget,
     report: TranslationReport,
+    *,
+    translate_description: bool = False,
 ) -> bool:
-    """Translates one article's headline, and its description when one is stored.
+    """Translates one article's headline, and its description when asked and affordable.
 
-    Returns True when the headline was translated. The description is best-effort: a reader
-    with a Chinese headline and a French standfirst is better served than one with neither,
-    so a failed description does not fail the article.
+    Returns True when the headline was translated. The description is best-effort and off by
+    default: it is 260 characters against a headline's 77, so including it cuts a day's
+    quota from roughly 650 headlines to 150 pairs. A reader with a Chinese headline and a
+    French standfirst is better served than one with neither, and far better served than one
+    whose quota ran out four articles in.
     """
     if article.language == target_language:
         report.articles_skipped_same_language += 1
@@ -96,7 +100,7 @@ async def translate_article(
     report.translated += 1
 
     description = article.original_description
-    if description and budget.can_afford(len(description)):
+    if translate_description and description and budget.can_afford(len(description)):
         budget.charge(len(description))
         report.characters_sent += len(description)
         try:
@@ -120,6 +124,7 @@ async def run_translation(
     target_languages: tuple[str, ...],
     max_per_run: int,
     max_characters: int = 0,
+    translate_descriptions: bool = False,
 ) -> TranslationReport:
     """One translation pass over the newest articles that still need one."""
     report = TranslationReport(provider=translator.name)
@@ -127,6 +132,7 @@ async def run_translation(
         logger.info("translation.disabled provider=%s budget=%d", translator.name, max_per_run)
         return report
 
+    # Two calls per article at most - headline, then optionally description.
     budget = TranslationBudget(max_calls=max_per_run * 2, max_characters=max_characters)
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_TRANSLATIONS)
 
@@ -148,7 +154,10 @@ async def run_translation(
                     report.articles_skipped_budget += 1
                     return
                 try:
-                    await translate_article(article, translator, target, budget, report)
+                    await translate_article(
+                        article, translator, target, budget, report,
+                        translate_description=translate_descriptions,
+                    )
                 except TranslationQuotaExceeded as exc:
                     # Not a failure of this article: the provider's day is over. Recorded
                     # once, and every queued task stops rather than asking again.
@@ -173,8 +182,9 @@ async def run_translation(
         report.errors.append(f"budget stopped the pass: {budget.exhausted_reason}")
 
     logger.info(
-        "translation.done provider=%s translated=%d failed=%d chars=%d",
-        translator.name, report.translated, report.failed, report.characters_sent,
+        "translation.done provider=%s translated=%d failed=%d chars=%d/%s",
+        translator.name, report.translated, report.failed,
+        report.characters_sent, max_characters or "unlimited",
     )
     return report
 

@@ -72,9 +72,28 @@ class Settings(BaseSettings):
     translator: str = "mymemory"
     #: Target languages for translation, comma-separated.
     translate_into: str = "zh"
-    #: Hard stop per run. MyMemory allows ~5,000 characters/day anonymously and ~50,000 with
-    #: a contact address, so this is a real limit, not a formality.
-    translate_max_per_run: int = 60
+    #: Articles attempted per run. The character budget below is the binding constraint;
+    #: this just stops a single run walking the whole table.
+    translate_max_per_run: int = 40
+
+    #: Hard character ceiling per run, enforced before each call. **This is the setting that
+    #: matters**, because the provider's limit is in characters, not articles.
+    #:
+    #: Measured on real data: an average headline is 77 characters and an average
+    #: description 260. MyMemory allows ~5,000 characters a day anonymously and ~50,000 with
+    #: a contact address. At eight runs a day that is ~600 characters per run anonymously,
+    #: or ~6,000 with the address. The default is the conservative one; raise it in the
+    #: deployment once TRANSLATE_CONTACT_EMAIL is set.
+    translate_max_characters_per_run: int = 600
+
+    #: Whether to translate the publisher's description as well as the headline.
+    #:
+    #: Off by default, and that is a budget decision rather than a feature one. A
+    #: description is 260 characters against a headline's 77, so translating both cuts the
+    #: number of articles a day's quota covers by more than three quarters - from ~650
+    #: headlines to ~150 pairs. The headline is what this product is for; a reader who wants
+    #: more opens the article.
+    translate_descriptions: bool = False
     #: Sent to MyMemory to raise the daily quota from 5,000 to 50,000 characters. Optional,
     #: not a credential - it is a contact address, and MyMemory documents it as such.
     translate_contact_email: str = ""

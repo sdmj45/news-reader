@@ -29,6 +29,10 @@ async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--limit", type=int, help="Articles per language. Overrides settings.")
     parser.add_argument("--language", help="Single target language. Overrides settings.")
+    parser.add_argument("--max-characters", type=int,
+                        help="Character ceiling for this run. Overrides settings.")
+    parser.add_argument("--descriptions", action="store_true",
+                        help="Also translate descriptions. Costs ~4x the quota per article.")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
@@ -46,7 +50,14 @@ async def main() -> int:
     async with httpx.AsyncClient() as client:
         translator = build_translator(settings, client)
         report = await run_translation(
-            repository, translator, target_languages=targets, max_per_run=limit,
+            repository, translator,
+            target_languages=targets,
+            max_per_run=limit,
+            max_characters=(
+                args.max_characters if args.max_characters is not None
+                else settings.translate_max_characters_per_run
+            ),
+            translate_descriptions=args.descriptions or settings.translate_descriptions,
         )
 
     if args.json:
@@ -57,7 +68,9 @@ async def main() -> int:
     print(f"considered        {report.articles_considered}")
     print(f"translated        {report.translated}")
     print(f"failed            {report.failed}  (success rate {report.success_rate:.0%})")
-    print(f"characters sent   {report.characters_sent}")
+    budget = (args.max_characters if args.max_characters is not None
+              else settings.translate_max_characters_per_run)
+    print(f"characters sent   {report.characters_sent} of {budget or 'unlimited'} allowed this run")
     print("skipped:")
     print(f"  licence         {report.articles_skipped_license}")
     print(f"  already done    {report.articles_skipped_already_done}")
