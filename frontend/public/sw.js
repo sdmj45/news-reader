@@ -10,8 +10,19 @@
  * one. Every /api request goes to the network and fails visibly when it cannot.
  */
 
-const SHELL_CACHE = 'newsreader-shell-v1'
-const SHELL_ASSETS = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg']
+const SHELL_CACHE = 'newsreader-shell-v2'
+
+// Everything here is relative to wherever this worker is served from, because that is not
+// always the domain root: a GitHub Pages project site lives at /<repo>/. This file is in
+// public/ so it is copied verbatim and cannot read Vite's BASE_URL - but a worker knows its
+// own location, and `./` resolves against it.
+const SCOPE = new URL('./', self.location.href)
+const url = (path) => new URL(path, SCOPE).pathname
+
+const SHELL_ASSETS = ['./', './index.html', './manifest.webmanifest', './icon.svg'].map(
+  (path) => new URL(path, SCOPE).href,
+)
+const INDEX = new URL('./index.html', SCOPE).href
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -39,15 +50,16 @@ self.addEventListener('fetch', (event) => {
   const { request } = event
   if (request.method !== 'GET') return
 
-  const url = new URL(request.url)
-  if (url.origin !== self.location.origin) return
+  const requestUrl = new URL(request.url)
+  if (requestUrl.origin !== self.location.origin) return
   // Never cache data. See the module comment.
-  if (url.pathname.startsWith('/api') || url.pathname === '/health') return
+  const path = requestUrl.pathname
+  if (path.startsWith(url('api')) || path === url('health')) return
 
   // Navigations: network first, shell from cache when offline.
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request).catch(() => caches.match('/index.html').then((r) => r ?? Response.error())),
+      fetch(request).catch(() => caches.match(INDEX).then((r) => r ?? Response.error())),
     )
     return
   }
