@@ -107,6 +107,19 @@ site appears at `https://<your-username>.github.io/news-reader/`.
 If the Actions tab shows nothing, GitHub has not enabled workflows for a freshly pushed
 repository yet — reload the page, or make any commit.
 
+### If `npm ci` fails in the Actions log
+
+Almost always the lockfile. `npm install` run behind a corporate npm proxy rewrites every
+`resolved` URL to an internal host that GitHub cannot reach, and npm reports that by
+printing its own usage text rather than saying so. Fix:
+
+```bash
+cd frontend && npm run lockfile:fix && git commit -am "Fix lockfile registry" && git push
+```
+
+`npm run lint` and both workflows check for this, so it fails with an explanation rather
+than with npm's help output.
+
 ### What the first run looks like
 
 | | |

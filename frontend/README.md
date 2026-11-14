@@ -11,6 +11,23 @@ npm run lint
 npm run e2e        # real browser, real backend — see e2e/reader.spec.mjs
 ```
 
+## If you run `npm install` behind a corporate proxy
+
+Your npm is configured against an internal mirror, and `npm install` rewrites every
+`resolved` URL in `package-lock.json` to point at it. That lockfile installs perfectly here
+and fails on every other machine, including GitHub Actions, which cannot resolve the
+internal hostname — and npm reports it by printing its own usage text, which is not a clue.
+
+```bash
+npm run lockfile:fix     # rewrite the URLs back to registry.npmjs.org
+npm run lockfile:check   # exits 1 if any private URL remains; part of `npm run lint`
+```
+
+The rewrite is safe: these mirrors are path-prefixed proxies of registry.npmjs.org, and the
+`integrity` hashes are of the tarball contents, which are identical whichever host served
+them. Installing still works locally afterwards, because npm substitutes your configured
+registry for the host in the lockfile.
+
 ## Two data modes
 
 `VITE_DATA_MODE` chooses where articles come from, behind one interface

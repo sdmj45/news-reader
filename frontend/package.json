@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "oxlint src e2e",
+    "lint": "node scripts/lockfile-registry.mjs --check && oxlint src e2e",
+    "lockfile:check": "node scripts/lockfile-registry.mjs --check",
+    "lockfile:fix": "node scripts/lockfile-registry.mjs",
     "preview": "vite preview",
     "e2e": "node e2e/reader.spec.mjs"
   },
