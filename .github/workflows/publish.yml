@@ -1,0 +1,148 @@
+name: collect and publish
+
+# Builds and publishes the whole site on a schedule, for free, with no cloud account and no
+# payment method anywhere.
+#
+#   GitHub Actions  runs the collector, the translator and the exporter
+#   GitHub Pages    serves the result as static files
+#
+# Why there is no server: the site reads two JSON files and filters them in the browser, so
+# nothing needs to be running between collections. That removes the only component that
+# would have required a billing account.
+#
+# Costs, checked 2026-11-14:
+#   * Actions minutes are unlimited on public repositories. On a private repository the
+#     Free plan includes 2,000 Linux minutes a month; this workflow takes ~3 minutes, so
+#     eight runs a day is about 720 minutes — inside the allowance, but watch it.
+#   * GitHub Pages is free on public repositories: 1 GB site, 100 GB/month bandwidth
+#     (soft), 10 builds/hour (soft). This snapshot is under 400 kB.
+#   * MyMemory translation is free and needs no key.
+#
+# Two caveats that are easy to be bitten by, so they are written down rather than learned:
+#   * GitHub disables scheduled workflows on a public repository after 60 days with no
+#     repository activity. A commit, or the "Run workflow" button, resets that clock.
+#   * Scheduled runs are delayed under load, and queued jobs can be dropped at peak. The
+#     cron below deliberately avoids the top of the hour.
+
+on:
+  schedule:
+    # Every three hours at :17 — off the hour, where GitHub's queue is shortest.
+    - cron: "17 */3 * * *"
+  workflow_dispatch: # the "Run workflow" button, which also resets the 60-day clock
+  push:
+    branches: [main]
+    paths: ["frontend/**", ".github/workflows/publish.yml"]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# A scheduled run and a push must not deploy over each other. Collection in progress is
+# allowed to finish: cancelling it mid-run wastes the translation quota it already spent.
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    env:
+      # Asserts that this instance serves one private household and republishes nothing.
+      # READ docs/COPYRIGHT_POLICY.md BEFORE PUBLISHING THIS SITE PUBLICLY. Without it the
+      # site still works, but only one source may be translated.
+      PERSONAL_USE_MODE: "true"
+      TRANSLATOR: mymemory
+      TRANSLATE_INTO: zh
+      TRANSLATE_MAX_PER_RUN: "80"
+      # Not a credential: MyMemory documents this as a contact address that raises the
+      # anonymous quota from ~5,000 to ~50,000 characters a day. Set it as a repository
+      # variable (Settings → Secrets and variables → Actions → Variables) if you want that.
+      TRANSLATE_CONTACT_EMAIL: ${{ vars.TRANSLATE_CONTACT_EMAIL }}
+      SQLITE_PATH: data/news.db
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      # The database carries two things across runs that matter: which articles have already
+      # been seen, and which headlines have already been translated. Without it every run
+      # re-translates the same headlines and burns the daily quota on work already done.
+      #
+      # A cache miss is survivable, not fatal: the run simply re-collects and re-translates
+      # within its budget. That is why this is a cache and not a committed file.
+      - name: Restore the article database
+        uses: actions/cache/restore@v4
+        with:
+          path: backend/data
+          key: news-db-${{ github.run_id }}
+          restore-keys: news-db-
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Collect
+        working-directory: backend
+        run: python -m scripts.ingest
+
+      - name: Translate
+        working-directory: backend
+        # A translation failure must not block publication: yesterday's Chinese plus today's
+        # French is a working site, and a red build over a third party's quota is noise.
+        continue-on-error: true
+        run: python -m scripts.translate
+
+      - name: Export the static snapshot
+        working-directory: backend
+        run: python -m scripts.export_static --out ../frontend/public/data
+
+      - name: Save the article database
+        uses: actions/cache/save@v4
+        # Saved even if a later step fails, so a build error does not throw away the
+        # translations this run paid for.
+        if: always()
+        with:
+          path: backend/data
+          key: news-db-${{ github.run_id }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build the site
+        working-directory: frontend
+        env:
+          # A GitHub Pages project site lives at /<repo>/, so every asset URL needs that
+          # prefix. Delete this line if you move to a custom domain or Cloudflare Pages.
+          VITE_BASE: /${{ github.event.repository.name }}/
+          VITE_DATA_MODE: static
+        run: |
+          npm ci
+          npm run build
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/dist
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+      - name: Report what was published
+        run: |
+          echo "### Published" >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat frontend/public/data/meta.json >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "Site: ${{ steps.deploy.outputs.page_url }}" >> "$GITHUB_STEP_SUMMARY"

@@ -30,9 +30,14 @@ Chinese, read them in a browser. Nothing is deployed anywhere — read
 
 ## What does not work
 
-* **Nothing is deployed.** No GCP project, no Firestore, no Cloud Run, no scheduler. The
-  Firestore repository is declared in the factory and not yet written. Collection and
-  translation are run by hand.
+* **It is not deployed yet** — but the pipeline to do it for free is written and tested.
+  Push to a public GitHub repo, enable Pages, and `.github/workflows/publish.yml` collects,
+  translates, exports and publishes every three hours at no cost. See
+  [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+* **No Google Cloud.** Its free tier requires a billing account with a payment method, and
+  this application does not need a server at all — the site reads a static JSON snapshot and
+  filters it in the browser. The FastAPI backend still exists and still works; it is a
+  development convenience now, not a deployment.
 * **Translation needs `PERSONAL_USE_MODE=true`.** A translation is a derivative work, and 28
   of 31 publishers have granted no such permission. With the flag off — the default — exactly
   one source (European Commission, CC BY 4.0) can be translated, which is about ten articles
@@ -113,6 +118,7 @@ Full policy: [`docs/COPYRIGHT_POLICY.md`](docs/COPYRIGHT_POLICY.md).
 
 | | |
 |---|---|
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Deploying for €0, with the free-tier numbers checked |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How it is built and why |
 | [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) | Every source, measured; the GAL schema; rejected candidates |
 | [`docs/COPYRIGHT_POLICY.md`](docs/COPYRIGHT_POLICY.md) | The licence model and its enforcement |

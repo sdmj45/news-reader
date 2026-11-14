@@ -83,6 +83,9 @@ class TranslationReport:
     failed: int = 0
     characters_sent: int = 0
     provider: str = "null"
+    #: True when the pass stopped early because the provider's allowance ran out. Not an
+    #: error: the articles already translated are kept, and the rest are retried next run.
+    quota_exhausted: bool = False
     errors: list[str] = field(default_factory=list)
 
     @property
@@ -93,6 +96,16 @@ class TranslationReport:
 
 class TranslationError(Exception):
     """A provider could not translate. Carries a reason; never swallowed into silence."""
+
+
+class TranslationQuotaExceeded(TranslationError):
+    """The provider's allowance is gone until it resets.
+
+    Distinct from an ordinary failure because the right response is different: one article
+    failing means try the next one, the quota being gone means **stop**. Measured on
+    2026-11-14 against MyMemory's free tier, the difference was eighty pointless requests to
+    a service that had already said no, which is both slow and rude to a free provider.
+    """
 
 
 @runtime_checkable

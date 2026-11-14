@@ -11,10 +11,28 @@ npm run lint
 npm run e2e        # real browser, real backend — see e2e/reader.spec.mjs
 ```
 
-The backend must be running for anything to appear:
+## Two data modes
+
+`VITE_DATA_MODE` chooses where articles come from, behind one interface
+([`src/services/api.ts`](src/services/api.ts)):
+
+- **`static`** — reads `public/data/{articles,meta}.json` and filters in the browser. No
+  server. This is what the deployed site uses and the default for a production build. On the
+  measured snapshot (400 articles, 353 kB, 121 kB gzipped) it is *faster* than the API,
+  because every filter after the first costs no round trip.
+- **`api`** — talks to the FastAPI backend. The default during `npm run dev`.
+
+For `api` mode the backend must be running:
 
 ```bash
 cd ../backend && PERSONAL_USE_MODE=true .venv/bin/python -m uvicorn app.main:app --port 8000
+```
+
+For `static` mode, generate a snapshot first:
+
+```bash
+cd ../backend && python -m scripts.export_static --out ../frontend/public/data
+cd ../frontend && VITE_DATA_MODE=static npm run build && npx vite preview
 ```
 
 ## Decisions worth knowing

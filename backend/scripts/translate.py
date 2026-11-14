@@ -68,6 +68,11 @@ async def main() -> int:
     for language in targets:
         print(f"\ntotal with a {language} headline: {repository.count_translated(language)}")
 
+    if report.quota_exhausted:
+        print("\n  The provider's daily allowance ran out and the pass stopped early.")
+        print("  Everything translated before that point is stored and will not be redone.")
+        print("  Set TRANSLATE_CONTACT_EMAIL in backend/.env to raise MyMemory's free")
+        print("  allowance from about 5,000 to about 50,000 characters a day.")
     if report.provider == "null":
         print("\n  TRANSLATOR=null: nothing was translated and nothing was requested.")
     if report.articles_skipped_license and not report.translated:

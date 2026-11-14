@@ -37,6 +37,7 @@ from app.models.licensing import LicenseType, allows_summary_publication
 from app.repositories.base import ArticleRepository
 from app.services.translation.base import (
     TranslationBudget,
+    TranslationQuotaExceeded,
     TranslationReport,
     TranslationRequest,
     Translator,
@@ -98,9 +99,14 @@ async def translate_article(
     if description and budget.can_afford(len(description)):
         budget.charge(len(description))
         report.characters_sent += len(description)
-        summary = await translator.translate(
-            TranslationRequest(description, article.language, target_language)
-        )
+        try:
+            summary = await translator.translate(
+                TranslationRequest(description, article.language, target_language)
+            )
+        except TranslationQuotaExceeded:
+            # The headline is already translated and stored. Losing the description to a
+            # quota is not a reason to discard the headline the run just paid for.
+            return True
         if summary is not None:
             article.translated_summary[target_language] = summary.text
 
@@ -131,9 +137,25 @@ async def run_translation(
             continue
 
         async def one(article: Article, target: str = target) -> None:
+            # Once the allowance is gone the remaining articles are not attempted at all.
+            # Checked before the semaphore as well as inside the handler, because the tasks
+            # run concurrently and the first refusal must stop the ones still queued.
+            if report.quota_exhausted:
+                report.articles_skipped_budget += 1
+                return
             async with semaphore:
+                if report.quota_exhausted:
+                    report.articles_skipped_budget += 1
+                    return
                 try:
                     await translate_article(article, translator, target, budget, report)
+                except TranslationQuotaExceeded as exc:
+                    # Not a failure of this article: the provider's day is over. Recorded
+                    # once, and every queued task stops rather than asking again.
+                    if not report.quota_exhausted:
+                        report.quota_exhausted = True
+                        report.errors.append(str(exc))
+                        logger.warning("translation.quota_exhausted %s", exc)
                 except Exception as exc:
                     logger.exception("translation.unexpected article=%s", article.id)
                     report.errors.append(f"{article.id}: {type(exc).__name__}: {exc}")
@@ -141,8 +163,11 @@ async def run_translation(
 
         await asyncio.gather(*(one(a) for a in pending))
         # Written once per language rather than once per article: the pass is rationed to a
-        # few dozen records, and one batched write is cheaper than sixty.
+        # few dozen records, and one batched write is cheaper than sixty. Written even when
+        # the quota ran out, so the translations already paid for are kept.
         repository.upsert_articles(pending)
+        if report.quota_exhausted:
+            break
 
     if budget.exhausted_reason:
         report.errors.append(f"budget stopped the pass: {budget.exhausted_reason}")

@@ -4,6 +4,10 @@ import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // GitHub Pages serves a project site from /<repo>/, not from /. Set VITE_BASE to
+  // "/news-reader/" for that; leave it unset for Cloudflare Pages or a custom domain,
+  // which both serve from the root.
+  base: process.env.VITE_BASE ?? '/',
   plugins: [react(), tailwindcss()],
   server: {
     // The dev server proxies to the local backend so the browser sees one origin and CORS

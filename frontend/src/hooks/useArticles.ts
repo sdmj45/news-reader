@@ -12,7 +12,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { ApiError, api } from '../services/api'
+import { api } from '../services/api'
+import { ApiError } from '../services/apiError'
 import type { Article, ArticleFilters } from '../types/api'
 
 export type LoadState =

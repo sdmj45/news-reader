@@ -38,7 +38,11 @@ import logging
 
 import httpx
 
-from app.services.translation.base import TranslationRequest, TranslationResult
+from app.services.translation.base import (
+    TranslationQuotaExceeded,
+    TranslationRequest,
+    TranslationResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +115,14 @@ class MyMemoryTranslator:
             logger.warning("mymemory.request_failed error=%s", exc)
             return None
 
+        if response.status_code == 429:
+            # The allowance is gone until it resets. Raising rather than returning None so
+            # the runner stops instead of asking eighty more times.
+            raise TranslationQuotaExceeded(
+                "MyMemory returned HTTP 429: the daily allowance is used up. It is about "
+                "5,000 characters a day anonymously; set TRANSLATE_CONTACT_EMAIL to raise "
+                "it to roughly 50,000. Translations already stored are unaffected."
+            )
         if not response.is_success:
             logger.warning("mymemory.http_error status=%s", response.status_code)
             return None
@@ -130,13 +142,17 @@ class MyMemoryTranslator:
         # translation would put "MYMEMORY WARNING: YOU USED ALL AVAILABLE FREE TRANSLATIONS"
         # on the front page in place of a headline.
         upper = translated.upper()
+        if "ALL AVAILABLE FREE TRANSLATIONS" in upper or "QUOTA" in upper:
+            raise TranslationQuotaExceeded(f"MyMemory refused: {translated[:160]}")
         if any(marker in upper for marker in _ERROR_MARKERS):
             logger.warning("mymemory.refused message=%s", translated[:120])
             return None
 
         if payload.get("quotaFinished"):
-            logger.warning("mymemory.quota_finished")
-            return None
+            raise TranslationQuotaExceeded(
+                "MyMemory reported quotaFinished: the daily allowance is used up. Set "
+                "TRANSLATE_CONTACT_EMAIL to raise it from ~5,000 to ~50,000 characters."
+            )
 
         match = data.get("match")
         match = float(match) if isinstance(match, (int, float)) else None

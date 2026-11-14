@@ -1,5 +1,17 @@
 /**
- * The one place that talks to the backend.
+ * The one place that fetches data.
+ *
+ * Two modes behind one interface:
+ *
+ * * **static** (the default, and what the deployed site uses) reads two JSON files produced
+ *   by `backend/scripts/export_static.py` and filters them in the browser. No server, so
+ *   nothing to pay for and nothing to keep running.
+ * * **api** talks to the FastAPI backend. Used in development, and the mode to switch to if
+ *   the snapshot ever outgrows a single file.
+ *
+ * `VITE_DATA_MODE` selects between them at build time. The default is `api` during
+ * development - where `vite.config.ts` proxies to a local backend - and `static` for a
+ * production build, because a production build is what gets deployed to a static host.
  *
  * Every call can fail, and the UI has to say so rather than showing an empty list: a reader
  * who sees "no articles" when the server is down will conclude there is no news. So errors
@@ -14,24 +26,16 @@ import type {
   Health,
   Source,
 } from '../types/api'
+import { ApiError } from './apiError'
+import { staticApi } from './staticData'
+
+export { ApiError }
 
 /** Empty in development: Vite proxies `/api` to the local backend, so requests are same-origin. */
 const BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 
 /** Long enough for a cold Cloud Run instance, short enough that a hung request is visible. */
 const TIMEOUT_MS = 15000
-
-export class ApiError extends Error {
-  // Declared and assigned rather than a parameter property: the project's TypeScript config
-  // sets `erasableSyntaxOnly`, which forbids syntax that emits runtime code.
-  readonly status: number | null
-
-  constructor(message: string, status: number | null) {
-    super(message)
-    this.name = 'ApiError'
-    this.status = status
-  }
-}
 
 async function request<T>(path: string, params?: URLSearchParams): Promise<T> {
   const url = `${BASE}${path}${params && [...params].length ? `?${params}` : ''}`
@@ -80,7 +84,15 @@ function toParams(filters: ArticleFilters): URLSearchParams {
   return params
 }
 
-export const api = {
+export interface DataSource {
+  articles(filters?: ArticleFilters): Promise<ArticlePage>
+  article(id: string): Promise<Article>
+  categories(language?: string): Promise<CategoryCount[]>
+  sources(): Promise<Source[]>
+  health(): Promise<Health>
+}
+
+const liveApi: DataSource = {
   articles: (filters: ArticleFilters = {}) =>
     request<ArticlePage>('/api/v1/articles', toParams(filters)),
 
@@ -96,3 +108,10 @@ export const api = {
 
   health: () => request<Health>('/health'),
 }
+
+/** `static` unless explicitly set to `api`; development defaults to `api`. */
+export const DATA_MODE: 'static' | 'api' =
+  (import.meta.env.VITE_DATA_MODE as 'static' | 'api' | undefined) ??
+  (import.meta.env.DEV ? 'api' : 'static')
+
+export const api: DataSource = DATA_MODE === 'static' ? staticApi : liveApi
