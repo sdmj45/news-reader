@@ -82,6 +82,37 @@ jobs:
       SQLITE_PATH: data/news.db
 
     steps:
+      # First, before anything expensive. If Pages is off, the run would otherwise
+      # spend three minutes collecting and a slice of the day's translation quota
+      # before failing on a setting that takes one click to change.
+      # Pages has to be switched on by a human once, in Settings. `configure-pages` has an
+      # `enablement: true` option that sounds like it removes that step, and it does not:
+      # its own action.yml says it "requires a token other than GITHUB_TOKEN". With the
+      # default token it fails with "Resource not accessible by integration", which does
+      # not mention Pages, settings, or what to do. Hence this check, which does.
+      - name: Check that GitHub Pages is enabled
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/$GITHUB_REPOSITORY/pages" >/dev/null 2>&1; then
+            echo "GitHub Pages is enabled for $GITHUB_REPOSITORY."
+          else
+            echo "::error title=GitHub Pages is not enabled::Open Settings -> Pages and set Source to 'GitHub Actions', then re-run this workflow."
+            {
+              echo "## GitHub Pages is not enabled yet"
+              echo
+              echo "One manual step is needed, once:"
+              echo
+              echo "1. Go to **Settings → Pages** in this repository"
+              echo "2. Under **Build and deployment → Source**, choose **GitHub Actions**"
+              echo "3. Come back to Actions and re-run this workflow"
+              echo
+              echo "The default \`GITHUB_TOKEN\` is not allowed to turn Pages on by itself,"
+              echo "so this cannot be automated without a personal access token."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
@@ -155,10 +186,6 @@ jobs:
           npm run build
 
       - uses: actions/configure-pages@v5
-        with:
-          # Turns Pages on for the repository on the first run, so the only manual step is
-          # creating the repository. Harmless once it is already enabled.
-          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: frontend/dist

@@ -79,6 +79,9 @@ only ever goes on new headlines.
 
 ## 3. Setting it up
 
+> **The five steps in brief:** create a public repo → push → **Settings → Pages → Source:
+> GitHub Actions** → (optional) add your email as a variable → Run workflow.
+
 **Step 1 — create an empty public repository.** On <https://github.com/new>: name it
 `news-reader`, set it **Public**, and add no README, no .gitignore and no licence (this
 repository already has them).
@@ -91,7 +94,17 @@ git remote add origin https://github.com/<your-username>/news-reader.git
 git push -u origin main
 ```
 
-**Step 3 — raise the translation quota tenfold.** Optional, free, 30 seconds, and the
+**Step 3 — turn GitHub Pages on.** This one cannot be automated: the default workflow token
+is not allowed to enable Pages, and `configure-pages`'s `enablement: true` option needs a
+personal access token, which is not worth creating for one click.
+
+> Repository → **Settings** → **Pages** → Build and deployment → **Source: GitHub Actions**
+
+Nothing to save; the dropdown applies immediately. If you skip it, the first workflow step
+fails in about five seconds and tells you this — deliberately placed before collection, so a
+missed setting does not cost three minutes and a slice of the translation quota.
+
+**Step 4 — raise the translation quota tenfold.** Optional, free, 30 seconds, and the
 difference between ~65 and ~650 translated headlines a day. It is a contact address, not a
 credential: MyMemory documents it as the way to lift the anonymous limit, with no
 registration and no verification.
@@ -99,13 +112,19 @@ registration and no verification.
 > Repository → Settings → Secrets and variables → Actions → **Variables** tab → New variable
 > Name `TRANSLATE_CONTACT_EMAIL`, value your email address.
 
-**Step 4 — run it.** Actions tab → "collect and publish" → **Run workflow**.
+**Step 5 — run it.** Actions tab → "collect and publish" → **Run workflow**.
 
-The workflow enables Pages itself on that first run. It takes about three minutes, and the
-site appears at `https://<your-username>.github.io/news-reader/`.
+It takes about three minutes, and the site appears at
+`https://<your-username>.github.io/news-reader/`.
 
 If the Actions tab shows nothing, GitHub has not enabled workflows for a freshly pushed
 repository yet — reload the page, or make any commit.
+
+### If the log says "Resource not accessible by integration"
+
+That is Pages not being enabled (step 3). The workflow now catches this as its first step
+with a readable message, but an older run of it fails later, inside `configure-pages`, with
+that sentence and no mention of Pages at all.
 
 ### If `npm ci` fails in the Actions log
 
