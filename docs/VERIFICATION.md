@@ -1,10 +1,34 @@
-# Phase 1 verification report
+# Verification report
 
 Date: **2026-11-14**
-Scope: specification Phase 0 (environment inspection) and Phase 1 (core news collection).
+Scope: specification Phases 0–4 — environment inspection, collection, REST API, reading
+interface, and translation.
 
 Everything below was produced by running the code in this repository. Commands are given so
 each claim can be re-run.
+
+## 0. Current totals
+
+```
+$ cd backend && .venv/bin/python -m pytest -q
+229 passed, 33 deselected in 4.90s
+
+$ .venv/bin/ruff check .
+All checks passed!
+
+$ cd frontend && npm run build && npm run lint
+built in 444ms — 242 kB JS (77 kB gzip), 16 kB CSS (4 kB gzip); lint clean
+
+$ npm run e2e        # real browser, real backend, real news
+23 passed, 0 failed
+```
+
+A full pipeline run on 2026-11-14:
+
+```
+collection   29/29 sources, 1,336 articles, 31.5s, duplicate rate 3.1%, 21 events
+translation  25 of 25 headlines into Chinese, 0 failed, 7,019 characters
+```
 
 ---
 
@@ -84,6 +108,25 @@ Second run immediately afterwards — **0 new, 600 unchanged**, confirming idemp
 Largest contributors: GDELT GAL 3,128; Sciencepost 400; DW English 128; Nature 75.
 644 distinct publishers appear in the database.
 
+## 4b. Translation — measured, not simulated
+
+MyMemory, free and key-less, on real French headlines:
+
+| French | Chinese |
+|---|---|
+| Victime d'une cyberattaque, Maileva, une filiale de La Poste, annonce un vol de données concernant 22 millions de personnes | 法国邮政旗下子公司 Maileva 遭遇网络攻击，宣布 2200 万人的数据被盗 |
+| Manifestations du 14 novembre : une équipe de BFMTV agressée en marge de la mobilisation à Lyon | 11月14日示威活动：BFMTV记者团队在里昂示威活动期间遭到袭击 |
+| Volodymyr Zelensky affirme que Washington a proposé des concessions territoriales… | 弗拉基米尔·泽连斯基声称，华盛顿提议以乌克兰加入北约为条件，换取领土让步 |
+| Grève à la SNCF : trafic perturbé lundi dans toute la France | 法国国家铁路公司罢工：周一法国全境交通受阻 |
+
+Proper nouns survive transliteration and "SNCF" is expanded rather than dropped. 50 of 50
+headlines translated across two passes, 0 failures.
+
+**The quota is the binding constraint, not the quality.** MyMemory allows roughly 5,000
+characters a day anonymously — about 60 headlines — rising to ~50,000 with a contact address
+in `TRANSLATE_CONTACT_EMAIL`. Hence: a separate pass, a budget checked before each call, and
+permanent storage so a headline is paid for once.
+
 ## 5. Acceptance criteria (specification section 18)
 
 | # | Criterion | Status | Evidence |
@@ -94,17 +137,28 @@ Largest contributors: GDELT GAL 3,128; Sciencepost 400; DW English 128; Nature 7
 | 4 | Articles stored in the database | **PASS** | 4,426 rows in SQLite |
 | 5 | Duplicates handled | **PASS** | Canonical-URL collapse (0.9–6% per run) + 131 event clusters, 78 cross-publisher |
 | 6 | Source permissions recorded | **PASS** | `license_type` + `license_evidence` on all 31; 2 CC BY-ND, 1 CC BY, 28 UNKNOWN |
-| 7 | Backend exposes REST APIs | **NOT STARTED** | Phase 2 |
-| 8 | Frontend displays real news | **NOT STARTED** | Phase 3 |
-| 9 | Works on mobile and desktop | **NOT STARTED** | Phase 3 |
-| 10 | fr / en / zh interfaces | **NOT STARTED** | Phase 3. Content in all three is collected. |
-| 11 | Search and category filtering | **PARTIAL** | Implemented and tested in the repository layer; no API to reach it |
-| 12 | Original links work | **PASS** | Canonical URLs stored; 0 invalid URLs in the GAL sample |
-| 13 | Scheduled collection jobs | **NOT STARTED** | Phase 5. `scripts/ingest.py` is the job body. |
-| 14 | Automated tests pass | **PASS** | 182 offline + 32 live |
+| 7 | Backend exposes REST APIs | **PASS** | FastAPI; `/health`, `/api/v1/articles`, `/articles/{id}`, `/articles/categories`, `/sources`, `/stats`. 24 API tests. |
+| 8 | Frontend displays real news | **PASS** | Verified in a real browser against the real backend; screenshots in the commit for Phase 3 |
+| 9 | Works on mobile and desktop | **PASS** | Checked at 390×844 and 1280×900, light and dark |
+| 10 | fr / en / zh interfaces | **PASS** | All three, independent of the news language. Verified end to end. |
+| 11 | Search and category filtering | **PASS** | API + UI, covered by API tests and browser tests |
+| 12 | Original links work | **PASS** | Canonical URLs stored; 0 invalid URLs in the GAL sample; browser test checks `target`/`rel` |
+| 13 | Scheduled collection jobs | **NOT STARTED** | Phase 5. `scripts/ingest.py` and `scripts/translate.py` are the job bodies. |
+| 14 | Automated tests pass | **PASS** | 229 backend offline, 23 browser E2E, 33 live-data |
 | 15 | Cloud deployment instructions complete | **NOT STARTED** | Phase 6 |
 | 16 | No paid service activated without approval | **PASS** | No cloud resource created. Defaults: SQLite, `SUMMARISER=null`, budget 0. |
-| 17 | No unsupported copyright assumptions | **PASS** | §7 below |
+| 17 | No unsupported copyright assumptions | **PASS** | §7 below. Translation is gated on an explicit operator assertion, not assumed. |
+
+Additionally, from the brief's other sections:
+
+| Requirement | Status |
+|---|---|
+| §1.2.6 AI summaries where permitted | **NOT IMPLEMENTED** — would apply to one source; headline translation was built first |
+| §1.2.7 Automatic translation into Chinese | **PASS** |
+| §1.2.7 Automatic translation into French | **NOT IMPLEMENTED** — the sources are already French |
+| §1.2.11 Bookmarks | **PASS** — browser-local, stored whole |
+| §10.5 PWA | **PASS** — manifest, icons, service worker, installable |
+| §11 User accounts | **NOT STARTED** — data structures exist, no auth |
 
 ## 6. Prior work: `../actuFrancaisAI`
 
@@ -187,7 +241,43 @@ Each was found by running the code, not by inspection, and each has a regression
 * **`ruff format` is not enforced** — 21 files would be reformatted. The hand-laid-out registry
   and keyword tables read better as written. `ruff check` passes.
 
-## 10. Next
+## 10. Defects found in Phases 2–4
 
-Phase 2: FastAPI over the existing repository. `ArticleQuery` and `Page` already match what the
-endpoints need, so this is mostly serialisation, CORS and rate limiting.
+Each found by running the code, each with a regression test.
+
+7. **SQLite connections cannot cross threads.** The repository held one connection; uvicorn
+   serves from a different thread, so *every* endpoint returned HTTP 500. No unit test caught
+   it because the tests call the repository directly. Fixed with per-thread connections and a
+   shared-cache URI for in-memory databases, plus
+   `test_the_api_serves_from_a_worker_thread`.
+
+8. **Headlines carried the publisher's own name as a suffix** — "… - La Dépêche de Kabylie" —
+   which repeats on every card next to a publisher label that already says it, and is paid
+   for twice when translated. Stripped only when the tail actually matches the outlet.
+
+9. **GDELT flooded the reading list with one paper's 2020 archive.** GAL dates articles by
+   first-seen, so a site republishing old content looks like the freshest news on the
+   service. Found by reading the first translated batch and noticing all six were from the
+   same Algerian regional paper. Fixed with a per-domain cap, and GDELT was disabled by
+   default on editorial grounds.
+
+10. **The Chinese interface rendered as tofu boxes** while Chinese *article* text rendered
+    fine: the base font stack had no CJK fallback, so every translated button and chip fell
+    through Inter to nothing. Invisible until the app was opened in a browser with no system
+    Chinese font — which is any bare Linux desktop.
+
+11. **The tagline truncated to "Les titres français, avec le c…"** at phone width.
+
+## 11. Next
+
+**Phase 5 — scheduled collection.** `scripts/ingest.py` and `scripts/translate.py` are
+already the job bodies; this is a Dockerfile, two Cloud Run Jobs and two Cloud Scheduler
+triggers.
+
+**Phase 6 — deployment.** Blocked on the owner creating a personal GCP project; the
+`gcloud` account on this host is a corporate one needing reauthentication. Needs the
+Firestore repository written, which is one class behind an existing protocol.
+
+Before any public deployment, two things in this report must change: the per-process rate
+limiter, and `PERSONAL_USE_MODE`, which the application refuses to run with
+`APP_ENV=production` for exactly that reason.

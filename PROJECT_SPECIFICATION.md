@@ -3,7 +3,7 @@
 The authoritative brief for this project, as provided by the owner on 2026-11-14.
 
 Implementation status against it is tracked in
-[`docs/PHASE1_VERIFICATION.md`](docs/PHASE1_VERIFICATION.md), which maps each of the
+[`docs/VERIFICATION.md`](docs/VERIFICATION.md), which maps each of the
 seventeen acceptance criteria in section 18 to evidence or to the phase that will deliver it.
 
 Where this implementation knowingly departs from the brief, the departure and its reason are
@@ -24,7 +24,7 @@ recorded here:
 > **Not yet inlined.** The full specification text has not been pasted into this file. It is
 > the only item from specification §16 that this repository does not yet contain, and it is a
 > copy-paste rather than a piece of work: everything derived from the brief — the deviation
-> table above, the acceptance-criteria mapping in `docs/PHASE1_VERIFICATION.md`, the licence
+> table above, the acceptance-criteria mapping in `docs/VERIFICATION.md`, the licence
 > policy, the source registry — is already here.
 >
 > Paste the brief below this line to complete the file.

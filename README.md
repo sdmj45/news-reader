@@ -116,7 +116,7 @@ Full policy: [`docs/COPYRIGHT_POLICY.md`](docs/COPYRIGHT_POLICY.md).
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How it is built and why |
 | [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) | Every source, measured; the GAL schema; rejected candidates |
 | [`docs/COPYRIGHT_POLICY.md`](docs/COPYRIGHT_POLICY.md) | The licence model and its enforcement |
-| [`docs/PHASE1_VERIFICATION.md`](docs/PHASE1_VERIFICATION.md) | Acceptance criteria, with evidence |
+| [`docs/VERIFICATION.md`](docs/VERIFICATION.md) | Acceptance criteria and defects found, with evidence |
 | [`PROJECT_SPECIFICATION.md`](PROJECT_SPECIFICATION.md) | The original brief |
 
 ## Layout
