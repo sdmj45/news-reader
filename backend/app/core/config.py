@@ -55,11 +55,37 @@ class Settings(BaseSettings):
     #: Sources to collect from. Empty means every enabled source in the registry.
     collector_only_sources: str = ""
 
+    # --- Rights ---------------------------------------------------------------------
+    #: Asserts that this instance serves one private household and republishes nothing.
+    #: Off by default. See app/models/rights.py for what it does and does not unlock.
+    #: Refused outright when APP_ENV=production.
+    personal_use_mode: bool = False
+
     # --- Enrichment ------------------------------------------------------------------
     #: "null" generates nothing. Any other value must be an implemented provider.
     summariser: str = "null"
     #: Hard stop on enrichment spend. Zero means the summariser never runs.
     summary_daily_budget_calls: int = 0
+
+    #: "null" or "mymemory". MyMemory is free and needs no key; see
+    #: app/services/translation/mymemory.py for its measured quota.
+    translator: str = "mymemory"
+    #: Target languages for translation, comma-separated.
+    translate_into: str = "zh"
+    #: Hard stop per run. MyMemory allows ~5,000 characters/day anonymously and ~50,000 with
+    #: a contact address, so this is a real limit, not a formality.
+    translate_max_per_run: int = 60
+    #: Sent to MyMemory to raise the daily quota from 5,000 to 50,000 characters. Optional,
+    #: not a credential - it is a contact address, and MyMemory documents it as such.
+    translate_contact_email: str = ""
+
+    #: Articles kept from one domain per GDELT run. Zero disables the cap. See
+    #: MAX_ARTICLES_PER_DOMAIN for the measurement that produced the default.
+    gdelt_max_per_domain: int = 5
+
+    #: Restrict GDELT to these languages. GAL is a 40-language firehose and this product
+    #: reads French news; without this, 94% of what it collects is noise.
+    gdelt_languages: str = "fr"
 
     # --- API ---------------------------------------------------------------------------
     api_cors_origins: str = "http://localhost:5173"
@@ -81,6 +107,15 @@ class Settings(BaseSettings):
     @property
     def only_sources(self) -> tuple[str, ...]:
         return tuple(s.strip() for s in self.collector_only_sources.split(",") if s.strip())
+
+    @property
+    def gdelt_language_filter(self) -> frozenset[str]:
+        """Empty means no filter - every language GAL supplies is kept."""
+        return frozenset(s.strip().lower() for s in self.gdelt_languages.split(",") if s.strip())
+
+    @property
+    def target_languages(self) -> tuple[str, ...]:
+        return tuple(s.strip().lower() for s in self.translate_into.split(",") if s.strip())
 
 
 @lru_cache(maxsize=1)

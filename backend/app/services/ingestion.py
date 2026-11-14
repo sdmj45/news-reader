@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 
 from app.collectors.base import CollectionResult
@@ -36,6 +36,7 @@ from app.collectors.collector_manager import CollectorManager
 from app.core.config import Settings
 from app.models.article import Article, Category, ProcessingStatus
 from app.models.licensing import allows_description_display, allows_summary_publication
+from app.models.rights import effective_license, guard_personal_use
 from app.models.source import NewsSource, SourceHealth
 from app.processors import classifier, dedup
 from app.repositories.base import ArticleRepository
@@ -99,7 +100,32 @@ class IngestionReport:
         return data
 
 
-def _enforce_license(article: Article, source: NewsSource) -> Article:
+def _with_effective_license(source: NewsSource, settings: Settings) -> NewsSource:
+    """A copy of ``source`` carrying the licence this deployment may actually act on.
+
+    Returns the source unchanged when nothing is overridden, which is the default and every
+    production path. The registry object itself is never mutated - it is frozen, and the
+    evidence it records must stay true whatever a deployment decides for itself.
+    """
+    licence = effective_license(source, settings)
+    if licence is source.license_type:
+        return source
+    from app.models.licensing import allows_derivatives
+
+    return replace(
+        source,
+        license_type=licence,
+        modification_allowed=allows_derivatives(licence),
+        summary_republication_allowed=allows_derivatives(licence),
+        license_evidence=(
+            f"Operator assertion: PERSONAL_USE_MODE is enabled. The registry records "
+            f"{source.license_type.value} for this publisher and that record is unchanged; "
+            f"see app/models/rights.py for what the assertion does and does not cover."
+        ),
+    )
+
+
+def _enforce_license(article: Article, source: NewsSource, settings: Settings) -> Article:
     """Second, independent licence check, made against the registry rather than the article.
 
     The parser already applied the rule. This exists because the parser takes its answer from
@@ -107,17 +133,22 @@ def _enforce_license(article: Article, source: NewsSource) -> Article:
     wrong one. Two checks against the same registry entry is cheap; publishing text the
     project has no right to publish is not.
     """
-    if article.original_description and not allows_description_display(source.license_type):
+    # ``source`` has already been through _with_effective_license, so its licence is the
+    # effective one. This second check exists to catch a collector that ignored it.
+    licence = source.license_type
+    if article.original_description and not allows_description_display(licence):
         article.original_description = None
         article.description_withheld_reason = (
-            f"Withheld at persistence: source licence is {source.license_type.value}."
+            f"Withheld at persistence: effective licence is {licence.value}."
         )
-    article.license_status = source.license_type
-    article.summary_reuse_allowed = allows_summary_publication(source.license_type)
+    article.license_status = licence
+    article.summary_reuse_allowed = allows_summary_publication(licence)
     if not article.summary_reuse_allowed:
         article.processing_status = ProcessingStatus.SUMMARY_SKIPPED_LICENSE
-    if article.body_paragraphs and source.license_type.value in ("UNKNOWN", "METADATA_ONLY",
-                                                                 "FEED_EXCERPT"):
+    if article.body_paragraphs and licence.value in ("UNKNOWN", "METADATA_ONLY",
+                                                     "FEED_EXCERPT", "PERSONAL_USE"):
+        # Personal use covers reading a standfirst, not warehousing whole articles. Nothing
+        # in this product needs the body, so it is not kept on that basis.
         article.body_paragraphs = []
     return article
 
@@ -130,6 +161,7 @@ async def run_ingestion(
     manager: CollectorManager | None = None,
 ) -> IngestionReport:
     """Executes one full collection run and returns its measured report."""
+    guard_personal_use(settings)
     started = datetime.now(UTC)
     report = IngestionReport(run_id=uuid.uuid4().hex[:16], started_at=started.isoformat())
 
@@ -137,6 +169,13 @@ async def run_ingestion(
     if settings.only_sources:
         wanted = set(settings.only_sources)
         selected = [s for s in selected if s.source_id in wanted]
+
+    # The parser decides what to keep from the licence on the NewsSource it is handed, so the
+    # effective licence is substituted *before* anything is fetched. Doing it afterwards
+    # would mean personal-use mode discarded descriptions at parse time and never got the
+    # chance to keep them.
+    selected = [_with_effective_license(s, settings) for s in selected]
+
     report.sources_attempted = len(selected)
     if not selected:
         report.finished_at = datetime.now(UTC).isoformat()
@@ -151,6 +190,8 @@ async def run_ingestion(
         min_host_interval=settings.collector_min_host_interval,
         max_attempts=settings.collector_max_attempts,
         gdelt_files_per_run=settings.gdelt_files_per_run,
+        gdelt_languages=settings.gdelt_language_filter,
+        gdelt_max_per_domain=settings.gdelt_max_per_domain,
     )
     try:
         results = await manager.collect_all(selected, health_by_id)
@@ -176,7 +217,7 @@ async def run_ingestion(
         report.sources_succeeded += 1
         report.descriptions_withheld_by_license += outcome.descriptions_withheld
         for article in result.articles:
-            collected.append(_enforce_license(article, source))
+            collected.append(_enforce_license(article, source, settings))
 
     report.articles_collected = len(collected)
 

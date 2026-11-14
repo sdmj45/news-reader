@@ -196,3 +196,37 @@ class TestCollectorRouting:
         rss = GDELTRSSCollector(client=None)
         assert rss.supports(make_source(source_type=SourceType.GDELT_GAL_RSS))
         assert not rss.supports(make_source(source_type=SourceType.GDELT_GAL_JSONNL))
+
+
+class TestLanguageFilter:
+    """GAL carries 40+ languages; this product reads French news."""
+
+    def test_only_the_configured_languages_survive(self, gal_payload, gal_source):
+        french_only = GDELTGALCollector(client=None, languages=frozenset({"fr"}))
+        articles, stats = parse(french_only, gal_payload, gal_source)
+
+        assert articles, "the fixture contains French records"
+        assert {a.language for a in articles} == {"fr"}
+        assert stats.filtered_by_language > 0
+
+    def test_filtered_records_are_not_counted_as_defects(self, gal_payload, gal_source):
+        french_only = GDELTGALCollector(client=None, languages=frozenset({"fr"}))
+        _, stats = parse(french_only, gal_payload, gal_source)
+
+        # A filter working as configured is not a quality problem. Folding it into drop_rate
+        # would make a French-only run look like a 94% failure.
+        assert stats.drop_rate < 0.2
+        assert stats.dropped_other == 0
+
+    def test_no_filter_keeps_everything(self, collector, gal_payload, gal_source):
+        articles, stats = parse(collector, gal_payload, gal_source)
+        assert stats.filtered_by_language == 0
+        assert len({a.language for a in articles}) > 1
+
+    def test_an_over_strict_filter_yields_nothing_rather_than_failing(
+        self, gal_payload, gal_source
+    ):
+        impossible = GDELTGALCollector(client=None, languages=frozenset({"xx"}))
+        articles, stats = parse(impossible, gal_payload, gal_source)
+        assert articles == []
+        assert stats.filtered_by_language == stats.raw_items

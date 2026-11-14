@@ -56,6 +56,14 @@ class LicenseType(str, Enum):
     EXPLICIT_AGREEMENT = "EXPLICIT_AGREEMENT"
     """A publisher-specific written permission exists. Its terms live in ``license_evidence``."""
 
+    PERSONAL_USE = "PERSONAL_USE"
+    """Not a publisher licence at all: the operator's assertion of private, non-redistributing use.
+
+    Only :func:`app.models.rights.effective_license` ever produces this value, and only when
+    ``PERSONAL_USE_MODE`` is on. It must never appear in the registry - the registry records
+    what publishers grant, and no publisher grants this. See :mod:`app.models.rights`.
+    """
+
 
 #: Licences under which the feed's own description text may be stored and displayed.
 _DESCRIPTION_OK = frozenset(
@@ -66,6 +74,7 @@ _DESCRIPTION_OK = frozenset(
         LicenseType.CC_BY_SA,
         LicenseType.PUBLIC_DOMAIN,
         LicenseType.EXPLICIT_AGREEMENT,
+        LicenseType.PERSONAL_USE,
     }
 )
 
@@ -76,6 +85,7 @@ _DERIVATIVES_OK = frozenset(
         LicenseType.CC_BY_SA,
         LicenseType.PUBLIC_DOMAIN,
         LicenseType.EXPLICIT_AGREEMENT,
+        LicenseType.PERSONAL_USE,
     }
 )
 

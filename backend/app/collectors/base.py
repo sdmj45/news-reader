@@ -72,6 +72,10 @@ class CollectionStats:
     dropped_invalid_url: int = 0
     dropped_missing_title: int = 0
     dropped_other: int = 0
+    filtered_by_language: int = 0
+    """Records a filter deliberately excluded. Not a failure; kept separate from drops."""
+    capped_by_domain: int = 0
+    """Records dropped because one domain had already contributed its share. Not a failure."""
     items_with_description: int = 0
     """How many entries offered a description - the coverage measure section 4.1 requires."""
     descriptions_withheld_by_license: int = 0
@@ -93,8 +97,12 @@ class CollectionStats:
 
     @property
     def drop_rate(self) -> float:
+        """Share of records lost to a *defect*. Language filtering is excluded deliberately:
+        a filter working as configured is not a quality problem, and folding it in here would
+        make a French-only GDELT run look like a 94% failure."""
         dropped = self.dropped_invalid_url + self.dropped_missing_title + self.dropped_other
-        return dropped / self.raw_items if self.raw_items else 0.0
+        considered = self.raw_items - self.filtered_by_language - self.capped_by_domain
+        return dropped / considered if considered > 0 else 0.0
 
 
 @dataclass

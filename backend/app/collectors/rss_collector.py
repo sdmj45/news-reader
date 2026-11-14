@@ -108,7 +108,7 @@ class RSSCollector(BaseCollector):
         keep_description: bool,
         summary_allowed: bool,
     ) -> Article | None:
-        title = norm.clean_title(entry.get("title"))
+        title = norm.clean_title(entry.get("title"), outlet=source.name)
         if not title:
             stats.dropped_missing_title += 1
             return None

@@ -66,6 +66,8 @@ class CollectorManager:
         min_host_interval: float = 1.0,
         max_attempts: int = 3,
         gdelt_files_per_run: int = 2,
+        gdelt_languages: frozenset[str] | None = None,
+        gdelt_max_per_domain: int = 5,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self._owns_client = client is None
@@ -81,7 +83,13 @@ class CollectorManager:
         self._collectors: list[BaseCollector] = [
             RSSCollector(self._client, **shared),
             GDELTRSSCollector(self._client, **shared),
-            GDELTGALCollector(self._client, files_per_run=gdelt_files_per_run, **shared),
+            GDELTGALCollector(
+                self._client,
+                files_per_run=gdelt_files_per_run,
+                languages=gdelt_languages,
+                max_per_domain=gdelt_max_per_domain,
+                **shared,
+            ),
         ]
         self._semaphore = asyncio.Semaphore(max_concurrency)
 

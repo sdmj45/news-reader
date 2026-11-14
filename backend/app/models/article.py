@@ -38,7 +38,16 @@ class ProcessingStatus(str, Enum):
     """Licence permits it, but there was no text to summarise beyond the headline."""
 
     SUMMARISED = "SUMMARISED"
+
     TRANSLATED = "TRANSLATED"
+    """At least the headline has been translated into every configured target language."""
+
+    TRANSLATION_SKIPPED_LICENSE = "TRANSLATION_SKIPPED_LICENSE"
+    """Deliberately not translated: a translation is a derivative work and the licence forbids it."""
+
+    TRANSLATION_FAILED = "TRANSLATION_FAILED"
+    """The provider was asked and could not. Distinct from "we chose not to ask"."""
+
     FAILED = "FAILED"
 
 
@@ -118,6 +127,11 @@ class Article:
 
     # --- Generated content (never publisher metadata) -------------------------------
     generated_summary: str | None = None
+    #: Machine translations of ``title``, keyed by target language. Separate from ``title``
+    #: so a reader always knows which words are the publisher's.
+    translated_title: dict[str, str] = field(default_factory=dict)
+    #: Machine translations of ``original_description`` (not of ``generated_summary``, which
+    #: this product does not produce), keyed by target language.
     translated_summary: dict[str, str] = field(default_factory=dict)
     provenance: Provenance = field(default_factory=Provenance)
     body_paragraphs: list[str] = field(default_factory=list)

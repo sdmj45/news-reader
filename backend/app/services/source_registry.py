@@ -7,7 +7,7 @@ how many entries carried a description. No URL here was guessed. Endpoints that 
 so nobody re-tries them next month and so the absence is evidence rather than an oversight.
 
 **Licensing is the other half of an entry, and the default is restrictive.** Of the thirty-one
-sources below (thirty active), twenty-eight are ``UNKNOWN`` - headline, publisher,
+sources below (twenty-nine active), twenty-eight are ``UNKNOWN`` - headline, publisher,
 timestamp and link, and nothing else - because no reuse permission has been researched for
 them. Three are not:
 
@@ -270,10 +270,25 @@ SOURCES: tuple[NewsSource, ...] = (
         source_type=SourceType.GDELT_GAL_JSONNL,
         # A base URL, not a file: see GDELTGALCollector.candidate_urls.
         feed_url="https://data.gdeltproject.org/gdeltv3/gal/",
-        enabled=True,
+        # Disabled by default, and this is a product decision rather than a technical one.
+        # GAL works: it is fetch-verified, its schema was measured, and a French-filtered run
+        # returned 184 articles in 9 seconds. What those 184 articles *are* is the problem.
+        # Filtering GAL to `fr` yields the francophone world, not French news: on 2026-11-14
+        # the largest contributors were a Tunisian daily (29), an Algerian paper
+        # re-publishing its 2020 archive (16) and a Senegalese site (11). For a household
+        # reading French news over breakfast that is noise, and it buries Le Monde and
+        # franceinfo under it.
+        #
+        # Enable with COLLECTOR_ONLY_SOURCES or by flipping this flag; the collector, the
+        # language filter and the per-domain cap are all in place and tested.
+        enabled=False,
         verification=VerificationState.FETCH_VERIFIED,
         verified_on=_VERIFIED,
         verified_item_count=1791,
+        verification_note=(
+            "Working and verified. Disabled on editorial grounds, not technical ones - see "
+            "the comment above and docs/DATA_SOURCES.md section 1.6."
+        ),
         license_type=LicenseType.UNKNOWN,
         attribution_required=True,
         commercial_reuse_allowed=False,

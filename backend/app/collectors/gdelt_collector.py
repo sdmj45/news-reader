@@ -84,6 +84,18 @@ GAL_MINUTES_PER_QUARTER = 6
 #: How far back to search when no cursor exists yet. Six quarters is about ninety minutes.
 GAL_DEFAULT_QUARTERS_BACK = 6
 
+#: Articles kept from any one domain per run.
+#:
+#: Measured on 2026-11-14: a French-filtered GAL run returned 184 articles of which 29 came
+#: from one Tunisian daily and 16 from an Algerian one that was re-publishing its 2020
+#: archive. GDELT dates those by first-seen, so a site dumping old content looks like the
+#: freshest news on the service and takes over a reading list sorted newest-first.
+#:
+#: A cap is the right shape of fix because the problem is concentration, not the publisher:
+#: five articles from a regional paper is coverage, two hundred is a flood. It is not a
+#: quality judgement and no domain is excluded.
+MAX_ARTICLES_PER_DOMAIN = 5
+
 #: Documented key, then the spellings seen in GDELT's other v3 products. Checked in order.
 _FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "date": ("date", "seendate", "datetime", "pubdate"),
@@ -127,11 +139,24 @@ class GDELTGALCollector(BaseCollector):
     def supports(self, source: NewsSource) -> bool:
         return source.source_type is SourceType.GDELT_GAL_JSONNL
 
-    def __init__(self, *args, files_per_run: int = 2, **kwargs) -> None:
+    def __init__(
+        self,
+        *args,
+        files_per_run: int = 2,
+        languages: frozenset[str] | None = None,
+        max_per_domain: int = MAX_ARTICLES_PER_DOMAIN,
+        **kwargs,
+    ) -> None:
         super().__init__(*args, **kwargs)
         #: GAL is a firehose; one file is ~1,800 articles. Two per run keeps a scheduled
         #: collection to a few thousand records rather than tens of thousands.
         self._files_per_run = files_per_run
+        #: Keep only these languages. Empty or None keeps everything. Measured on a real
+        #: file: 1,791 records across 40+ languages, of which 104 were French - so for a
+        #: French news reader this filter is the difference between signal and noise.
+        self._languages = languages or frozenset()
+        #: See MAX_ARTICLES_PER_DOMAIN. Zero disables the cap.
+        self._max_per_domain = max_per_domain
 
     @staticmethod
     def candidate_urls(now: datetime, quarters_back: int = GAL_DEFAULT_QUARTERS_BACK) -> list[str]:
@@ -301,6 +326,7 @@ class GDELTGALCollector(BaseCollector):
 
         articles: list[Article] = []
         seen: set[str] = set()
+        per_domain: Counter[str] = Counter()
         decoded_any = False
 
         for line in lines[:MAX_RECORDS_PER_PAYLOAD]:
@@ -321,6 +347,10 @@ class GDELTGALCollector(BaseCollector):
             )
             if article is None or article.canonical_url in seen:
                 continue
+            if self._max_per_domain and per_domain[article.domain] >= self._max_per_domain:
+                stats.capped_by_domain += 1
+                continue
+            per_domain[article.domain] += 1
             seen.add(article.canonical_url)
             articles.append(article)
             # Counted on kept articles only; see the same note in rss_collector.
@@ -352,13 +382,22 @@ class GDELTGALCollector(BaseCollector):
         if not canonical:
             stats.dropped_invalid_url += 1
             return None
+        domain = norm.domain_of(canonical)
         # GDELT indexes aggregators too. Their links redirect elsewhere, so storing one gives
         # a reader a URL that is not the article they were shown.
         if norm.is_aggregator_url(canonical):
             stats.dropped_other += 1
             return None
 
-        title = norm.clean_title(_get(record, "title"))
+        language = norm.normalise_language(_get(record, "lang"), default="und")
+        if self._languages and language not in self._languages:
+            # Filtered, not failed: counted separately from malformed records so that a
+            # mis-set filter shows up as "collected 3 of 1,791" rather than as a parse error.
+            stats.filtered_by_language += 1
+            return None
+
+        outlet = _get(record, "outlet") or domain
+        title = norm.clean_title(_get(record, "title"), outlet=outlet)
         if not title:
             stats.dropped_missing_title += 1
             return None
@@ -375,8 +414,7 @@ class GDELTGALCollector(BaseCollector):
                     f"publisher's description, it does not license it."
                 )
 
-        domain = norm.domain_of(canonical) or _get(record, "domain").lower()
-        publisher = _get(record, "outlet") or domain or source.name
+        publisher = outlet or source.name
 
         return Article(
             id=article_id_for(canonical),
@@ -390,7 +428,7 @@ class GDELTGALCollector(BaseCollector):
             # GAL records carry no country field; leaving it null is correct, and inferring one
             # from the TLD would be wrong for .com, .org and every global outlet.
             country=None,
-            language=norm.normalise_language(_get(record, "lang"), default="und"),
+            language=language,
             source_id=source.source_id,
             published_at=norm.parse_datetime(_get(record, "date"), discovered_at),
             discovered_at=discovered_at,

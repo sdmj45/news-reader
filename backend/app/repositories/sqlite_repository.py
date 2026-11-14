@@ -17,8 +17,11 @@ Indexes follow specification section 6: ``published_at``, ``category``, ``langua
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
+import threading
+import uuid
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from datetime import UTC, datetime
 from pathlib import Path
@@ -54,6 +57,7 @@ CREATE TABLE IF NOT EXISTS articles (
     summary_reuse_allowed       INTEGER NOT NULL DEFAULT 0,
     attribution_text            TEXT NOT NULL DEFAULT '',
     generated_summary           TEXT,
+    translated_title            TEXT NOT NULL DEFAULT '{}',
     translated_summary          TEXT NOT NULL DEFAULT '{}',
     provenance                  TEXT NOT NULL DEFAULT '{}',
     body_paragraphs             TEXT NOT NULL DEFAULT '[]',
@@ -71,6 +75,9 @@ CREATE INDEX IF NOT EXISTS idx_articles_publisher  ON articles(publisher, publis
 CREATE INDEX IF NOT EXISTS idx_articles_source     ON articles(source_id, published_at DESC);
 CREATE INDEX IF NOT EXISTS idx_articles_canonical  ON articles(canonical_url);
 CREATE INDEX IF NOT EXISTS idx_articles_event      ON articles(event_id);
+-- Drives the translation pass: "newest articles that still need a Chinese headline".
+CREATE INDEX IF NOT EXISTS idx_articles_untranslated
+    ON articles(summary_reuse_allowed, published_at DESC);
 
 CREATE TABLE IF NOT EXISTS source_health (
     source_id             TEXT PRIMARY KEY,
@@ -112,23 +119,81 @@ def _dt(value: str | None) -> datetime | None:
 
 
 class SQLiteArticleRepository:
-    """A file-backed or in-memory article store. Not thread-safe; one instance per worker."""
+    """A file-backed or in-memory article store, safe to share across threads.
+
+    ``sqlite3`` refuses to use a connection from a thread other than the one that created it,
+    and a web server will absolutely do that: FastAPI runs sync endpoints in a thread pool,
+    and even all-async endpoints can be served from a different thread than the one that
+    built the application. So each thread gets its own connection, created on first use.
+
+    An in-memory database is the exception. ``:memory:`` means *a private database per
+    connection*, so per-thread connections would silently hand each thread an empty one. The
+    shared-cache URI form makes a single in-memory database visible to every connection in
+    the process, and one connection is kept open for the repository's lifetime so the
+    database does not vanish when the last user closes.
+    """
 
     def __init__(self, path: str | Path = ":memory:") -> None:
         self._path = str(path)
-        if self._path != ":memory:":
+        self._in_memory = self._path == ":memory:"
+        self._local = threading.local()
+        self._lock = threading.Lock()
+        self._all_connections: list[sqlite3.Connection] = []
+
+        if self._in_memory:
+            # A URI unique to this instance, so two in-memory repositories in one process -
+            # which is every test module - do not share rows.
+            self._uri = f"file:memdb-{uuid.uuid4().hex}?mode=memory&cache=shared"
+            # Held open for the instance's lifetime: a shared-cache in-memory database is
+            # destroyed when its last connection closes.
+            self._keepalive: sqlite3.Connection | None = self._connect()
+        else:
             Path(self._path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(self._path)
-        self._conn.row_factory = sqlite3.Row
-        # WAL lets the API read while a collection job writes. Harmless in memory.
-        if self._path != ":memory:":
-            self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA foreign_keys=ON")
-        self._conn.executescript(SCHEMA)
-        self._conn.commit()
+            self._uri = self._path
+            self._keepalive = None
+
+        self._initialise(self._connection())
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self._uri, uri=self._in_memory, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        if not self._in_memory:
+            # WAL lets the API read while a collection job writes.
+            conn.execute("PRAGMA journal_mode=WAL")
+            # Rather than failing immediately when the collector holds the write lock.
+            conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute("PRAGMA foreign_keys=ON")
+        with self._lock:
+            self._all_connections.append(conn)
+        return conn
+
+    @staticmethod
+    def _initialise(conn: sqlite3.Connection) -> None:
+        conn.executescript(SCHEMA)
+        conn.commit()
+
+    @property
+    def _conn(self) -> sqlite3.Connection:
+        """This thread's connection, created on first use."""
+        return self._connection()
+
+    def _connection(self) -> sqlite3.Connection:
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = self._connect()
+            self._local.conn = conn
+        return conn
 
     def close(self) -> None:
-        self._conn.close()
+        with self._lock:
+            connections, self._all_connections = self._all_connections, []
+        for conn in connections:
+            # Best-effort: a connection already closed by its own thread must not turn
+            # teardown into a failure.
+            with contextlib.suppress(sqlite3.Error):
+                conn.close()
+        self._local = threading.local()
+        self._keepalive = None
 
     def __enter__(self) -> SQLiteArticleRepository:
         return self
@@ -241,6 +306,54 @@ class SQLiteArticleRepository:
         )
         return Page(articles=[_article_of(r) for r in rows], next_cursor=next_cursor)
 
+    def list_untranslated(self, target_language: str, limit: int = 50) -> list[Article]:
+        """Newest articles whose licence permits a translation and that lack one.
+
+        Filtered in SQL rather than in Python: the table holds tens of thousands of rows and
+        the translation pass runs on a small budget, so reading them all to discard most
+        would be the most expensive part of a cheap operation.
+
+        ``json_extract`` is SQLite-specific. The Firestore implementation will need a
+        denormalised ``translated_languages`` array instead, which is why this is not on the
+        :class:`ArticleRepository` protocol as a query object - it is a named operation, and
+        each backend expresses it in its own terms.
+        """
+        rows = self._conn.execute(
+            """SELECT * FROM articles
+               WHERE summary_reuse_allowed = 1
+                 AND duplicate_of IS NULL
+                 AND json_extract(translated_title, ?) IS NULL
+               ORDER BY published_at DESC
+               LIMIT ?""",
+            (f"$.{target_language}", limit),
+        ).fetchall()
+        return [_article_of(r) for r in rows]
+
+    def count_translated(self, target_language: str) -> int:
+        return self._conn.execute(
+            "SELECT COUNT(*) AS n FROM articles WHERE json_extract(translated_title, ?) IS NOT NULL",
+            (f"$.{target_language}",),
+        ).fetchone()["n"]
+
+    def count_by_category(self, language: str | None = None) -> dict[str, int]:
+        """Article counts per category, newest-first order irrelevant. Non-empty only."""
+        sql = "SELECT category, COUNT(*) AS n FROM articles WHERE duplicate_of IS NULL"
+        params: list[object] = []
+        if language:
+            sql += " AND language = ?"
+            params.append(language)
+        sql += " GROUP BY category ORDER BY n DESC"
+        return {r["category"]: r["n"] for r in self._conn.execute(sql, params)}
+
+    def count_by_language(self) -> dict[str, int]:
+        return {
+            r["language"]: r["n"]
+            for r in self._conn.execute(
+                "SELECT language, COUNT(*) AS n FROM articles WHERE duplicate_of IS NULL "
+                "GROUP BY language ORDER BY n DESC"
+            )
+        }
+
     def distinct_publishers(self) -> list[str]:
         return [r["publisher"] for r in
                 self._conn.execute("SELECT DISTINCT publisher FROM articles ORDER BY publisher")]
@@ -304,7 +417,7 @@ class SQLiteArticleRepository:
 
 # ---------------------------------------------------------------------- row mapping
 
-_COLUMNS = ["id", "url", "canonical_url", "content_hash", "title", "original_title", "publisher", "domain", "country", "language", "source_id", "published_at", "discovered_at", "author", "image_url", "original_description", "description_withheld_reason", "offered_description_chars", "category", "secondary_categories", "license_status", "summary_reuse_allowed", "attribution_text", "generated_summary", "translated_summary", "provenance", "body_paragraphs", "processing_status", "duplicate_of", "event_id", "created_at", "updated_at"]
+_COLUMNS = ["id", "url", "canonical_url", "content_hash", "title", "original_title", "publisher", "domain", "country", "language", "source_id", "published_at", "discovered_at", "author", "image_url", "original_description", "description_withheld_reason", "offered_description_chars", "category", "secondary_categories", "license_status", "summary_reuse_allowed", "attribution_text", "generated_summary", "translated_title", "translated_summary", "provenance", "body_paragraphs", "processing_status", "duplicate_of", "event_id", "created_at", "updated_at"]
 
 _UPSERT_SQL = (
     f"INSERT INTO articles ({','.join(_COLUMNS)}) VALUES ({','.join('?' * len(_COLUMNS))}) "
@@ -324,6 +437,7 @@ def _row_of(article: Article, now: str) -> tuple:
         article.category.value, json.dumps([c.value for c in article.secondary_categories]),
         article.license_status.value, int(article.summary_reuse_allowed),
         article.attribution_text, article.generated_summary,
+        json.dumps(article.translated_title, ensure_ascii=False),
         json.dumps(article.translated_summary, ensure_ascii=False),
         json.dumps(
             {k: _iso(v) if isinstance(v, datetime) else v
@@ -362,6 +476,7 @@ def _article_of(row: sqlite3.Row) -> Article:
         summary_reuse_allowed=bool(row["summary_reuse_allowed"]),
         attribution_text=row["attribution_text"],
         generated_summary=row["generated_summary"],
+        translated_title=json.loads(row["translated_title"]),
         translated_summary=json.loads(row["translated_summary"]),
         provenance=provenance,
         body_paragraphs=json.loads(row["body_paragraphs"]),

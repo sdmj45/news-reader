@@ -54,12 +54,44 @@ def strip_html(value: str | None) -> str:
     return _WHITESPACE_RE.sub(" ", text).strip()
 
 
-def clean_title(value: str | None) -> str:
-    """A display-ready headline: no markup, no doubled spaces, no trailing separators."""
+#: Separators publishers put between a headline and their own name.
+_SUFFIX_SEPARATORS = (" - ", " – ", " — ", " | ", " :: ")
+
+
+def clean_title(value: str | None, outlet: str | None = None) -> str:
+    """A display-ready headline: no markup, no doubled spaces, no trailing outlet name.
+
+    Publishers routinely append their own name - "Les projets calent - La Depeche de
+    Kabylie". Removing it is worth doing for two reasons beyond tidiness: the suffix repeats
+    on every headline from that outlet, where the publisher is already shown next to it, and
+    it is *paid for* when the headline is translated, which on a free quota of about 5,000
+    characters a day is real money's worth of characters.
+
+    Only removed when ``outlet`` is given and the tail actually matches it. Guessing from the
+    separator alone would mangle "Proces Dupont - le verdict", and the outlet name is always
+    available at the call site because the collector knows which source it is parsing.
+    """
     text = strip_html(value)
-    # Feeds often append the outlet: "Headline - Le Monde". Left alone: removing it reliably
-    # needs the outlet name, and guessing mangles headlines that legitimately contain a dash.
+    if outlet:
+        text = _strip_outlet_suffix(text, outlet)
     return text.strip(" \t–—-|")
+
+
+def _strip_outlet_suffix(text: str, outlet: str) -> str:
+    """Removes a trailing ``<separator><outlet>``, case- and accent-insensitively."""
+    folded_outlet = normalise_title(outlet)
+    if not folded_outlet:
+        return text
+    for separator in _SUFFIX_SEPARATORS:
+        index = text.rfind(separator)
+        if index <= 0:
+            continue
+        tail = text[index + len(separator) :]
+        # Folded comparison so "LA DEPECHE DE KABYLIE" matches "La Depeche de Kabylie". The
+        # length bound keeps a long trailing clause - which is headline, not byline - intact.
+        if len(tail) <= 60 and normalise_title(tail) == folded_outlet:
+            return text[:index].rstrip(" -–—|")
+    return text
 
 
 def normalise_title(value: str | None) -> str:
