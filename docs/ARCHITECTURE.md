@@ -2,8 +2,21 @@
 
 ## Current state
 
-Phase 1 of the specification is implemented and verified: a working news collection engine.
-Phases 2–8 (backend API, frontend, summarisation, scheduling, cloud deployment) are not.
+Phases 1–4 are implemented and verified: collection, a read-only REST API, a reading
+interface, and Chinese translation. Phases 5–8 (scheduled jobs, cloud deployment,
+stabilisation, public release) are not.
+
+Three processes, deliberately separate:
+
+```
+  scripts/ingest.py      collection      fast, free, every 20-30 min
+  scripts/translate.py   translation     slow, rationed, budget-capped
+  app/main.py            the API         read-only, serves what the other two wrote
+```
+
+They are separate because their failure modes are: a translation quota running out must
+never cost an article, and a collection run must never block a reader. Phase 5 schedules the
+first two as Cloud Run Jobs without changing either.
 
 ```
                     ┌──────────────────────────────────────────┐
@@ -40,6 +53,12 @@ Phases 2–8 (backend API, frontend, summarisation, scheduling, cloud deployment
                               ArticleRepository
                       ┌─────────────────┴─────────────────┐
                  SQLite (now)                    Firestore (Phase 6)
+                              │
+                 ┌────────────┴─────────────┐
+                 │                          │
+       scripts/translate.py            app/main.py  (FastAPI, read-only)
+       MyMemory, budget-capped,              │
+       permanent, licence-gated         frontend/  (React, Cloudflare Pages)
 ```
 
 ## Why it is shaped this way

@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+/* Design tokens.
+   Light and dark are both first-class: this is a news reader people open early in the
+   morning and late at night, and a white screen at 06:30 is a reason to close the tab. */
+@theme {
+  /* The CJK faces are part of the *base* stack, not only of `.cjk`. The interface itself is
+     translated into Chinese, so every button, chip and label can contain Han characters -
+     and Inter has none. Without a CJK fallback here, a machine with no system Chinese font
+     renders the whole Chinese interface as tofu boxes while the article text, which does
+     carry the `.cjk` class, renders correctly. That is exactly what happened the first time
+     this was opened in a headless browser, and it would happen on any bare Linux desktop. */
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans SC", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Source Han Sans SC", sans-serif;
+  /* Article text puts the CJK face first so Chinese sets in its own design rather than in
+     whatever the Latin face happens to fall back to, which is often a mismatched weight
+     sitting directly under the French line. */
+  --font-cjk: "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+    "Source Han Sans SC", "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  --bg: #ffffff;
+  --bg-subtle: #f6f7f9;
+  --bg-raised: #ffffff;
+  --border: #e3e6ea;
+  --text: #16181d;
+  --text-muted: #5c6370;
+  --text-faint: #8b929e;
+  --accent: #1a5fb4;
+  --accent-soft: #e8f0fb;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1115;
+    --bg-subtle: #151820;
+    --bg-raised: #171a21;
+    --border: #262b36;
+    --text: #e8eaed;
+    --text-muted: #9aa2b1;
+    --text-faint: #6b7280;
+    --accent: #6ea8fe;
+    --accent-soft: #1b2638;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0f1115;
+  --bg-subtle: #151820;
+  --bg-raised: #171a21;
+  --border: #262b36;
+  --text: #e8eaed;
+  --text-muted: #9aa2b1;
+  --text-faint: #6b7280;
+  --accent: #6ea8fe;
+  --accent-soft: #1b2638;
+  color-scheme: dark;
+}
+
+html {
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Chinese text renders in its own stack at a slightly larger size: at the same nominal size
+   CJK glyphs read smaller than Latin ones, and this interface puts the two on adjacent
+   lines where the mismatch is obvious. */
+.cjk {
+  font-family: var(--font-cjk);
+  font-size: 1.03em;
+  line-height: 1.65;
+}
+
+/* Respect a reader who has asked the OS for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+/* A focus ring that is visible in both themes and only for keyboard users. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Actualités · Les titres français, avec le chinois à côté</title>
+    <meta
+      name="description"
+      content="Les titres de la presse française, avec leur traduction chinoise. Liens vers les articles originaux."
+    />
+    <!-- Matches the CSS variables so the browser chrome does not flash white before paint. -->
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Actualités" />
+    <!-- Referrer is trimmed to the origin: a publisher's analytics has no business knowing
+         which filter a reader was on when they clicked. -->
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      Cette application a besoin de JavaScript. / 本应用需要 JavaScript。
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
