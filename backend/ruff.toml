@@ -1,0 +1,25 @@
+line-length = 100
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF"]
+ignore = [
+    # The module docstrings in this project carry the design reasoning and legal context; a
+    # 100-character limit on prose would make them worse, not better.
+    "E501",
+    "B008",
+    # Non-breaking spaces, thin spaces and en dashes appear in this codebase on purpose: they
+    # are the characters real feeds send, and the normaliser exists to remove them. Flagging
+    # them would mean deleting the test data that proves the normaliser works.
+    "RUF001",
+    "RUF002",
+    "RUF003",
+    # Unpacking a tuple and using one half is normal in tests that assert on articles only.
+    "RUF059",
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["E501"]
+# A 232-word stopword list reads as grouped prose and would become unreviewable as a list
+# literal of 232 quoted strings.
+"app/processors/dedup.py" = ["SIM905"]
