@@ -57,6 +57,8 @@ def _format(report) -> str:
             )
             if outcome.not_modified:
                 detail = "    not modified (304)"
+        elif outcome.error and outcome.error.startswith("skipped:"):
+            detail = f"    skipped  {outcome.error[len('skipped: '):]}"
         else:
             detail = f"    FAILED  {outcome.error}"
         lines.append(f"    {outcome.source_id:<26} {detail}")

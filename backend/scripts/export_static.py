@@ -39,10 +39,19 @@ from app.repositories.factory import build_repository
 
 #: Articles in the snapshot. Enough for several days of reading, small enough to stay fast.
 #:
-#: Measured on real data: 800 articles came to 680 kB, 231 kB gzipped, which is a slow first
-#: paint on mobile for a reader who wanted today's headlines. 400 is 352 kB, 121 kB gzipped,
-#: and still covers several days.
-DEFAULT_LIMIT = 400
+#: Chosen by measuring the alternatives on the real registry of 52 sources, counting the
+#: articles each setting surfaces from the slow, high-signal technology sources (DeepMind,
+#: OpenAI, LWN, MIT Technology Review, IEEE Spectrum, InfoQ, Simon Willison, GitHub):
+#:
+#:   limit  cap   France  Tech  China  slow-AI  gzipped  window
+#:     400   12       43   164     47       38   105 kB  2d20h
+#:     550   15       53   242     65       83   142 kB  5d16h   <- chosen
+#:     650   18       63   278     78       91   168 kB  9d17h
+#:
+#: 650 is better on every count except that its window reaches the ten-day cut-off, so the
+#: tail of the list is a fortnight old, and 168 kB is a lot to send a phone. 550 doubles
+#: the frontier-technology coverage over 400 for 37 kB more.
+DEFAULT_LIMIT = 550
 
 #: Characters of the publisher's description kept, cut on a word boundary.
 #:
@@ -56,6 +65,20 @@ DEFAULT_MAX_DESCRIPTION = 320
 #: reader showing last month's headlines because nothing newer arrived is worse than one
 #: showing a short list.
 MAX_AGE_DAYS = 10
+
+#: Articles any one publisher may contribute to the snapshot.
+#:
+#: Without this, "newest 400" is won by whoever publishes most often. Measured across 53
+#: sources: franceinfo took 54 slots and Le Monde 51, the window shrank to 21 hours, and
+#: **every** low-volume source was squeezed out entirely - Google DeepMind, OpenAI, MIT
+#: Technology Review, LWN, the GitHub blog and Import AI each had zero articles in it.
+#: Those are precisely the sources worth reading; they publish once a week rather than
+#: once an hour, and a pure recency cut is the one selection rule guaranteed to lose them.
+#:
+#: Capping per publisher costs a few of the fiftieth-most-recent franceinfo headlines and
+#: buys the entire slow half of the registry: at this setting those eight sources
+#: contribute 83 articles instead of none.
+DEFAULT_MAX_PER_PUBLISHER = 15
 
 
 def _truncate(text: str, limit: int) -> str:
@@ -121,30 +144,68 @@ def article_json(article: Article, max_description: int = DEFAULT_MAX_DESCRIPTIO
     return data
 
 
-def collect(repository, limit: int, languages: tuple[str, ...]) -> list[Article]:
-    """The newest articles within the age window, newest first.
+def collect(
+    repository,
+    limit: int,
+    languages: tuple[str, ...],
+    max_per_publisher: int = DEFAULT_MAX_PER_PUBLISHER,
+) -> list[Article]:
+    """The newest articles within the age window, newest first, balanced across publishers.
 
-    Paged rather than fetched in one query because the repository caps a page at 200 - the
-    same cap the API enforces, and going around it here would make the export the one caller
-    that reads unbounded.
+    Asks each publisher for its newest ``max_per_publisher`` and merges, rather than taking
+    the newest N overall and trimming. The difference matters: trimming a global list can
+    only remove articles it has already read, so a publisher whose latest post is older
+    than the Nth most recent article in the database is invisible no matter how large N is.
+    That is exactly how every weekly source disappeared from a 400-article snapshot.
+
+    Bounded by construction - publishers times the cap, around 500 rows for this registry -
+    so it does not grow with the database the way a "read five times the limit and filter"
+    pass would.
     """
     cutoff = datetime.now(UTC) - timedelta(days=MAX_AGE_DAYS)
-    out: list[Article] = []
-    cursor: str | None = None
-    while len(out) < limit:
-        page = repository.list_articles(
-            ArticleQuery(
-                languages=languages,
-                published_after=cutoff,
-                limit=min(200, limit - len(out)),
-                cursor=cursor,
+
+    def newest(count: int, publisher: str | None = None) -> list[Article]:
+        out: list[Article] = []
+        cursor: str | None = None
+        while len(out) < count:
+            page = repository.list_articles(
+                ArticleQuery(
+                    languages=languages,
+                    publishers=(publisher,) if publisher else (),
+                    published_after=cutoff,
+                    limit=min(200, count - len(out)),
+                    cursor=cursor,
+                )
             )
-        )
-        out.extend(page.articles)
-        cursor = page.next_cursor
-        if not cursor:
-            break
-    return out[:limit]
+            out.extend(page.articles)
+            cursor = page.next_cursor
+            if not cursor:
+                break
+        return out
+
+    if not max_per_publisher:
+        return newest(limit)
+
+    selected: list[Article] = []
+    for publisher in repository.distinct_publishers():
+        selected.extend(newest(max_per_publisher, publisher))
+
+    selected.sort(key=lambda a: a.published_at, reverse=True)
+    if len(selected) >= limit:
+        return selected[:limit]
+
+    # Capping can leave the snapshot short when few publishers have posted recently.
+    # Publishing a half-empty page because of an internal rule would be the wrong trade, so
+    # the remainder is filled from the newest articles overall.
+    chosen = {a.id for a in selected}
+    for article in newest(limit):
+        if article.id not in chosen:
+            selected.append(article)
+            chosen.add(article.id)
+            if len(selected) == limit:
+                break
+    selected.sort(key=lambda a: a.published_at, reverse=True)
+    return selected[:limit]
 
 
 def main() -> int:
@@ -156,11 +217,14 @@ def main() -> int:
                         help="Repeatable. Default: every language in the database.")
     parser.add_argument("--max-description", type=int, default=DEFAULT_MAX_DESCRIPTION,
                         help="Characters of publisher description to keep. 0 keeps all.")
+    parser.add_argument("--max-per-publisher", type=int, default=DEFAULT_MAX_PER_PUBLISHER,
+                        help="Articles one publisher may contribute. 0 disables the cap.")
     args = parser.parse_args()
 
     settings = get_settings()
     repository = build_repository(settings)
-    articles = collect(repository, args.limit, tuple(args.language))
+    articles = collect(repository, args.limit, tuple(args.language),
+                       max_per_publisher=args.max_per_publisher)
 
     if not articles:
         # Writing an empty snapshot would replace a working site with a blank one. Refusing
@@ -216,6 +280,8 @@ def main() -> int:
     print(f"wrote {len(articles)} articles ({size / 1024:.0f} kB) to {out_dir}")
     print(f"  translated  {translated} ({translated / len(articles):.0%})")
     print(f"  languages   {', '.join(f'{k}={v}' for k, v in list(meta['languages'].items())[:6])}")
+    print(f"  publishers  {len(meta['publishers'])} "
+          f"(max {args.max_per_publisher or 'unlimited'} articles each)")
     print(f"  newest      {meta['newest']}")
     print(f"  oldest      {meta['oldest']}")
     return 0

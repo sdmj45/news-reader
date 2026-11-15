@@ -174,9 +174,82 @@ SOURCES: tuple[NewsSource, ...] = (
     _unknown("next-ink", "Next", "next.ink", "FR", "fr",
              "https://next.ink/feed/", 50, category=Category.TECHNOLOGY, interval=120,
              notes="367 kB per fetch. French technology journalism, successor to Next INpact."),
-    _unknown("numerama", "Numerama", "numerama.com", "FR", "fr",
-             "https://www.numerama.com/feed/", 15, category=Category.TECHNOLOGY,
-             interval=60),
+    NewsSource(
+        source_id="numerama",
+        name="Numerama",
+        domain="numerama.com",
+        country="FR",
+        language="fr",
+        source_type=SourceType.RSS,
+        feed_url="https://www.numerama.com/feed/",
+        # Disabled on evidence, not impression. The technology desk is for AI, programming
+        # and IT; a sample of Numerama's output on 2026-11-15 was Volkswagen in China,
+        # a SpaceX catch, GTA 6 traffic figures, a Renault Scenic, season 3 of Rings of
+        # Power and "the 10 best comedies on Disney+". Good consumer-technology writing,
+        # and it was the second-largest contributor to the section, so it was crowding out
+        # the subject the section exists for.
+        enabled=False,
+        verification=VerificationState.FETCH_VERIFIED,
+        verified_on=_VERIFIED_DESKS,
+        verified_item_count=15,
+        verification_note=(
+            "Reachable and parsable (HTTP 200, 15 entries). Disabled on editorial grounds: "
+            "consumer and entertainment technology rather than AI, programming or IT."
+        ),
+        license_type=LicenseType.UNKNOWN,
+        license_evidence=_NO_PERMISSION,
+        attribution_text="Numerama",
+        default_category=Category.TECHNOLOGY.value,
+        fetch_interval_minutes=60,
+    ),
+
+    # ------------------------------------------------------------- Technology: AI research
+    # First-party and close-to-the-work sources. The technology desk is global by design:
+    # the frontier of this subject is in American and Chinese labs, so a section built from
+    # French and European outlets would be reading about it second-hand.
+    _unknown("deepmind", "Google DeepMind", "deepmind.google", "GB", "en",
+             "https://deepmind.google/blog/rss.xml", 100,
+             category=Category.ARTIFICIAL_INTELLIGENCE, interval=360, max_items=15,
+             notes="100 entries per fetch, 68% with a description; capped at the newest 15."),
+    _unknown("google-research", "Google Research", "research.google", "US", "en",
+             "https://research.google/blog/rss/", 100,
+             category=Category.ARTIFICIAL_INTELLIGENCE, interval=360, max_items=15),
+    _unknown("import-ai", "Import AI", "importai.substack.com", "US", "en",
+             "https://importai.substack.com/feed", 20,
+             category=Category.ARTIFICIAL_INTELLIGENCE, interval=720,
+             notes="Weekly newsletter; 436 kB per fetch, so polled twice a day at most."),
+    _unknown("simonwillison", "Simon Willison", "simonwillison.net", "GB", "en",
+             "https://simonwillison.net/atom/everything/", 30,
+             category=Category.ARTIFICIAL_INTELLIGENCE, interval=180,
+             notes="One engineer writing about LLMs in practice. High signal, low volume."),
+    _unknown("ieee-spectrum-ai", "IEEE Spectrum", "spectrum.ieee.org", "US", "en",
+             "https://spectrum.ieee.org/feeds/topic/artificial-intelligence.rss", 30,
+             category=Category.ARTIFICIAL_INTELLIGENCE, interval=360, max_items=15),
+
+    # ------------------------------------------------------- Technology: engineering and IT
+    _unknown("theregister", "The Register", "theregister.com", "GB", "en",
+             "https://www.theregister.com/headlines.atom", 50,
+             category=Category.TECHNOLOGY, interval=120, max_items=25,
+             notes="297 kB per fetch. Enterprise IT, read worldwide."),
+    _unknown("infoq", "InfoQ", "infoq.com", "US", "en",
+             "https://feed.infoq.com/", 15, category=Category.TECHNOLOGY, interval=180),
+    _unknown("lwn", "LWN.net", "lwn.net", "US", "en",
+             "https://lwn.net/headlines/newrss", 15, category=Category.TECHNOLOGY,
+             interval=360, notes="Linux kernel and systems engineering, in depth."),
+    _unknown("github-blog", "The GitHub Blog", "github.blog", "US", "en",
+             "https://github.blog/feed/", 10, category=Category.TECHNOLOGY, interval=360),
+    _unknown("wired", "WIRED", "wired.com", "US", "en",
+             "https://www.wired.com/feed/rss", 50, category=Category.TECHNOLOGY,
+             interval=120, max_items=25),
+
+    # ------------------------------------------------------- Technology: China
+    # Chinese technology reported in English, because the Chinese-language technology feeds
+    # probed on 2026-11-15 were all unusable - see REJECTED_CANDIDATES.
+    _unknown("scmp-tech", "South China Morning Post", "scmp.com", "HK", "en",
+             "https://www.scmp.com/rss/36/feed", 50, category=Category.TECHNOLOGY,
+             interval=120, max_items=25),
+    _unknown("pandaily", "Pandaily", "pandaily.com", "CN", "en",
+             "https://pandaily.com/feed/", 20, category=Category.TECHNOLOGY, interval=180),
 
     # ------------------------------------------------------------------ Europe, institutions
     NewsSource(
@@ -422,6 +495,34 @@ REJECTED_CANDIDATES: dict[str, str] = {
     "https://www.voachinese.com/api/zkvypeuikq":
         "HTTP 200 with an 11-byte body on 2026-11-14.",
     # Probed 2026-11-15 while building the China and technology desks.
+    "https://36kr.com/feed":
+        "HTTP 200, 25 kB, but 0 parsable entries on 2026-11-15.",
+    "https://www.jiqizhixin.com/rss":
+        "HTTP 200, 7.6 kB, but 0 parsable entries on 2026-11-15 (机器之心).",
+    "https://www.qbitai.com/feed":
+        "Connection timeout on 2026-11-15 from this host (量子位).",
+    "https://www.infoq.cn/feed":
+        "HTTP 404 with a 4-byte body on 2026-11-15 (InfoQ China).",
+    "https://technode.com/feed/":
+        "HTTP 200 with 2,000 entries and a 12 MB body on 2026-11-15. Works, and excluded "
+        "on cost: 12 MB every poll for China technology that Pandaily and SCMP Tech "
+        "already cover in English.",
+    "https://huggingface.co/blog/feed.xml":
+        "HTTP 200, 907 entries on 2026-11-15, but 0 of them carried a description. Titles "
+        "and links only, for 268 kB a poll.",
+    "https://restofworld.org/feed/latest":
+        "HTTP 403 on 2026-11-15.",
+    "https://rss.arxiv.org/rss/cs.AI":
+        "HTTP 200 but 0 parsable entries on 2026-11-15, as with the export.arxiv.org path.",
+    "https://stackoverflow.blog/feed/":
+        "HTTP 200, 40 entries on 2026-11-15, 27 with a description. Left out: the feed is "
+        "largely company announcements rather than engineering news.",
+    "https://dev.to/feed":
+        "HTTP 200, 12 entries on 2026-11-15. Community posts of uneven provenance; left "
+        "out in favour of edited sources.",
+    "https://www.engadget.com/rss.xml":
+        "HTTP 200, 20 entries on 2026-11-15. Consumer gadget coverage rather than the AI, "
+        "programming and IT this desk is for.",
     "https://www.voachinese.com/api/zrqiteuuir":
         "HTTP 200 with a 988-byte body and 0 entries on 2026-11-15. VOA's Chinese feed "
         "endpoints are opaque API ids and none of the ones tried returned items.",

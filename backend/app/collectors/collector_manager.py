@@ -106,9 +106,33 @@ class CollectorManager:
     def collector_for(self, source: NewsSource) -> BaseCollector | None:
         return next((c for c in self._collectors if c.supports(source)), None)
 
-    def should_skip(self, health: SourceHealth | None, now: datetime) -> str | None:
+    def should_skip(
+        self, source: NewsSource, health: SourceHealth | None, now: datetime
+    ) -> str | None:
         """Why this source is being skipped this run, or ``None`` to collect it."""
-        if health is None or health.consecutive_failures == 0:
+        if health is None:
+            return None
+
+        # The source's own polling interval. This field was declared on NewsSource and
+        # documented from the first commit and read by nothing, which made every entry's
+        # `interval=` a comment rather than a setting: a 360-minute feed and a 20-minute one
+        # were both fetched on every run. It matters now that the registry carries feeds
+        # publishing their whole archive - one is 12 MB - and the scheduled job runs eight
+        # times a day.
+        #
+        # A tolerance of one minute, because a run that starts a few seconds early should
+        # not push a source to the next cycle and halve its effective rate.
+        if health.last_successful_fetch and source.fetch_interval_minutes:
+            due_at = health.last_successful_fetch + timedelta(
+                minutes=source.fetch_interval_minutes - 1
+            )
+            if now < due_at:
+                return (
+                    f"polled {source.fetch_interval_minutes} min apart; "
+                    f"next due at {due_at.isoformat(timespec='minutes')}"
+                )
+
+        if health.consecutive_failures == 0:
             return None
         wait = backoff_minutes(health.consecutive_failures)
         if not wait or health.last_attempted_fetch is None:
@@ -136,7 +160,7 @@ class CollectorManager:
 
         async def run_one(source: NewsSource) -> CollectionResult:
             health = health_by_id.get(source.source_id)
-            skip_reason = self.should_skip(health, now)
+            skip_reason = self.should_skip(source, health, now)
             if skip_reason:
                 logger.info("collector.skipped source=%s reason=%s", source.source_id, skip_reason)
                 return CollectionResult(source_id=source.source_id, error=f"skipped: {skip_reason}")

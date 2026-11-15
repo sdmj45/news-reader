@@ -9,6 +9,7 @@ distinction is specification section 15's "real data validation" requirement.
 from __future__ import annotations
 
 import gzip
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -75,7 +76,11 @@ class TestHappyPath:
     @respx.mock
     async def test_a_second_run_inserts_nothing_new(self, repo, mem_settings):
         respx.get("https://a.test/feed.xml").mock(return_value=httpx.Response(200, text=FEED))
-        source = make_source(feed_url="https://a.test/feed.xml")
+        # Interval zero so this exercises write idempotency rather than the polling
+        # interval, which is what TestPollingInterval is for. Before intervals were
+        # enforced, this test passed for the wrong reason: the second run refetched.
+        source = replace(make_source(feed_url="https://a.test/feed.xml"),
+                         fetch_interval_minutes=0)
 
         await ingest(repo, mem_settings, [source])
         second = await ingest(repo, mem_settings, [source])
@@ -406,3 +411,64 @@ class TestGDELTQuietPeriods:
 
         assert report.sources_succeeded == 0
         assert repo.get_source_health("gdelt-gal").consecutive_failures == 1
+
+
+class TestPollingInterval:
+    """`fetch_interval_minutes` was declared, documented, and read by nothing."""
+
+    @respx.mock
+    async def test_a_source_is_not_refetched_before_its_interval(self, repo, mem_settings):
+        route = respx.get("https://a.test/feed.xml").mock(
+            return_value=httpx.Response(200, text=FEED)
+        )
+        source = make_source(feed_url="https://a.test/feed.xml")
+        source = replace(source, fetch_interval_minutes=180)
+
+        await ingest(repo, mem_settings, [source])
+        assert route.call_count == 1
+
+        second = await ingest(repo, mem_settings, [source])
+        assert route.call_count == 1, "a 180-minute feed must not be fetched twice in a row"
+        assert second.sources_skipped == 1
+        assert "180 min apart" in second.outcomes[0].error
+
+    @respx.mock
+    async def test_it_is_refetched_once_the_interval_has_passed(self, repo, mem_settings):
+        route = respx.get("https://a.test/feed.xml").mock(
+            return_value=httpx.Response(200, text=FEED)
+        )
+        source = replace(make_source(feed_url="https://a.test/feed.xml"),
+                         fetch_interval_minutes=180)
+        await ingest(repo, mem_settings, [source])
+
+        health = repo.get_source_health("test-src")
+        health.last_successful_fetch = datetime.now(UTC) - timedelta(hours=4)
+        repo.save_source_health(health)
+
+        await ingest(repo, mem_settings, [source])
+        assert route.call_count == 2
+
+    @respx.mock
+    async def test_a_frequent_source_is_fetched_every_run(self, repo, mem_settings):
+        route = respx.get("https://a.test/feed.xml").mock(
+            return_value=httpx.Response(200, text=FEED)
+        )
+        # The scheduled job runs every three hours; a 20-minute feed is always due.
+        source = replace(make_source(feed_url="https://a.test/feed.xml"),
+                         fetch_interval_minutes=20)
+        await ingest(repo, mem_settings, [source])
+        health = repo.get_source_health("test-src")
+        health.last_successful_fetch = datetime.now(UTC) - timedelta(hours=3)
+        repo.save_source_health(health)
+        await ingest(repo, mem_settings, [source])
+        assert route.call_count == 2
+
+    @respx.mock
+    async def test_a_skipped_source_is_not_counted_as_a_failure(self, repo, mem_settings):
+        respx.get("https://a.test/feed.xml").mock(return_value=httpx.Response(200, text=FEED))
+        source = replace(make_source(feed_url="https://a.test/feed.xml"),
+                         fetch_interval_minutes=180)
+        await ingest(repo, mem_settings, [source])
+        second = await ingest(repo, mem_settings, [source])
+        assert repo.get_source_health("test-src").consecutive_failures == 0
+        assert second.sources_succeeded == 0 and second.sources_skipped == 1

@@ -96,6 +96,22 @@ descriptions. That is the intended behaviour, not a defect.
 | Chinese | 3 | 德国之声 (DW), 法广 (RFI), 纽约时报中文网 |
 | Multilingual | 1 | GDELT GAL |
 
+### 2.0b Why the snapshot caps each publisher
+
+"The newest 550 articles" sounds like a neutral selection rule and is not: it hands the page
+to whoever publishes most often. Measured across 53 sources, franceinfo took 54 slots and Le
+Monde 51, the window shrank to 21 hours, and **every low-volume source had zero articles in
+it** — Google DeepMind, OpenAI, MIT Technology Review, LWN, the GitHub blog and Import AI
+alike. Those are the sources worth reading; they publish weekly, not hourly, and a pure
+recency cut is the one rule guaranteed to lose them.
+
+`export_static.py` therefore asks each publisher for its newest 15 and merges, rather than
+taking the newest 550 and trimming. The difference is not cosmetic: trimming a global list
+can only remove articles it has already read, so a publisher whose latest post is older than
+the 550th most recent article is invisible at any list size. With the cap those eight
+sources contribute 83 articles instead of none, and the window widens from 21 hours to five
+days.
+
 ### 2.1 Measured per-source behaviour
 
 From a full live run on 2026-11-14 (`python -m scripts.ingest`): **30/30 sources succeeded,
