@@ -189,6 +189,30 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: frontend/dist
+
+      # `deploy-pages` occasionally fails with "No artifacts named github-pages were found
+      # for this workflow run" immediately after a successful upload. The artifact is there;
+      # the API that lists it is eventually consistent, and the deploy action asks once.
+      # Observed on one run in eight, and the next scheduled run succeeded unchanged -
+      # which is the signature of a race, not a broken build.
+      #
+      # Waiting for the artifact to become visible turns a random red run into a few extra
+      # seconds. Twelve attempts, five seconds apart: generous against a lag that is
+      # normally under one.
+      - name: Wait for the artifact to be listed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for attempt in $(seq 1 12); do
+            if gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" \
+                 --jq '.artifacts[].name' 2>/dev/null | grep -qx 'github-pages'; then
+              echo "artifact visible after $attempt attempt(s)"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::warning title=Artifact not listed::The github-pages artifact was not listed after 60s. Deploying anyway; if this run fails, re-run it."
+
       - id: deploy
         uses: actions/deploy-pages@v4
 

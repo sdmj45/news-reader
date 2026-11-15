@@ -6,9 +6,16 @@
  * far more often than on a desktop.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { LANGUAGE_NAMES, UI_LANGUAGES, type Strings, type UiLanguage } from '../i18n/strings'
+import {
+  HIDDEN_CATEGORIES,
+  LANGUAGE_NAMES,
+  UI_LANGUAGES,
+  categoryRank,
+  type Strings,
+  type UiLanguage,
+} from '../i18n/strings'
 import type { CategoryCount, Health } from '../types/api'
 
 export type Theme = 'auto' | 'light' | 'dark'
@@ -117,6 +124,19 @@ export function FilterBar({
   // The input owns its text; `query` is only the initial value. Mirroring the prop back
   // into state on every change would fight the user's typing.
   const [draft, setDraft] = useState(query)
+
+  // Fixed editorial order first, then whatever is left by size. Sorting purely by count
+  // reshuffles the navigation every few hours as one feed or another has a busy morning,
+  // which makes the sections a reader opens habitually move around under their thumb.
+  const ordered = useMemo(
+    () =>
+      categories
+        .filter((c) => !HIDDEN_CATEGORIES.has(c.category) && c.count > 0)
+        .sort(
+          (a, b) => categoryRank(a.category) - categoryRank(b.category) || b.count - a.count,
+        ),
+    [categories],
+  )
   const timer = useRef<number | undefined>(undefined)
 
   // Debounced: every keystroke is a request otherwise, and the backend does a LIKE scan.
@@ -157,7 +177,7 @@ export function FilterBar({
         <Chip active={selected === null} onClick={() => onSelect(null)}>
           {strings.all}
         </Chip>
-        {categories.map((entry) => (
+        {ordered.map((entry) => (
           <Chip
             key={entry.category}
             active={selected === entry.category}

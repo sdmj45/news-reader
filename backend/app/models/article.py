@@ -55,6 +55,10 @@ class Category(str, Enum):
     """Specification section 9. ``OTHER`` is used when classification abstains."""
 
     FRANCE = "FRANCE"
+    CHINA = "CHINA"
+    """China, as a desk rather than a language: a Le Monde piece about Beijing belongs here
+    as much as a BBC Chinese one. Separate from INTERNATIONAL because a reader who wants
+    China news does not want it diluted by everything else that is not France."""
     INTERNATIONAL = "INTERNATIONAL"
     EUROPE = "EUROPE"
     POLITICS = "POLITICS"

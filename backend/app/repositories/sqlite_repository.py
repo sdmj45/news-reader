@@ -264,7 +264,19 @@ class SQLiteArticleRepository:
                 where.append(f"{column} IN ({','.join('?' * len(values))})")
                 params.extend(values)
 
-        in_clause("category", tuple(c.value for c in query.categories))
+        if query.categories:
+            # Matches the primary category *or* a secondary one, so clicking "China" finds
+            # a French political story tagged China as well as the China desk's own
+            # articles. Without this the narrower tags the classifier records are written
+            # and never read, and a desk chip shows a fraction of its subject.
+            wanted = [c.value for c in query.categories]
+            where.append(
+                "(category IN ({placeholders}) OR EXISTS ("
+                "  SELECT 1 FROM json_each(articles.secondary_categories)"
+                "  WHERE json_each.value IN ({placeholders})"
+                "))".format(placeholders=",".join("?" * len(wanted)))
+            )
+            params.extend(wanted * 2)
         in_clause("language", query.languages)
         in_clause("country", query.countries)
         in_clause("publisher", query.publishers)
@@ -336,14 +348,27 @@ class SQLiteArticleRepository:
         ).fetchone()["n"]
 
     def count_by_category(self, language: str | None = None) -> dict[str, int]:
-        """Article counts per category, newest-first order irrelevant. Non-empty only."""
-        sql = "SELECT category, COUNT(*) AS n FROM articles WHERE duplicate_of IS NULL"
-        params: list[object] = []
-        if language:
-            sql += " AND language = ?"
-            params.append(language)
-        sql += " GROUP BY category ORDER BY n DESC"
-        return {r["category"]: r["n"] for r in self._conn.execute(sql, params)}
+        """Article counts per category, counting secondary tags too.
+
+        Counts therefore sum to more than the article total, because an article about
+        Chinese AI policy is in both the China section and the technology one. That is the
+        right answer: each count says how many articles the chip will show, which is what a
+        number next to a chip means. A count that disagreed with the list behind it would
+        be worse than no count.
+        """
+        language_clause = " AND language = ?" if language else ""
+        params: list[object] = [language] if language else []
+        sql = f"""
+            SELECT value AS category, COUNT(*) AS n FROM (
+                SELECT category AS value FROM articles
+                 WHERE duplicate_of IS NULL{language_clause}
+                UNION ALL
+                SELECT json_each.value FROM articles, json_each(articles.secondary_categories)
+                 WHERE duplicate_of IS NULL{language_clause}
+            )
+            GROUP BY value ORDER BY n DESC
+        """
+        return {r["category"]: r["n"] for r in self._conn.execute(sql, params * 2)}
 
     def count_by_language(self) -> dict[str, int]:
         return {

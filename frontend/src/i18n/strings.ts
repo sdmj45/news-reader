@@ -10,6 +10,39 @@
  * pluralisation beyond one case; a framework here would be more configuration than content.
  */
 
+/**
+ * The order the section chips appear in, which is an editorial decision rather than a
+ * statistical one.
+ *
+ * Sorting by article count — the obvious default — puts whichever feed was chattiest this
+ * morning first, so the navigation reshuffles itself between visits and the sections a
+ * reader actually opens drift to the right. This order is fixed: France, then technology
+ * and AI, then China, then economy, then Europe. Anything not listed follows, by count.
+ */
+export const CATEGORY_ORDER: readonly string[] = [
+  'FRANCE',
+  'TECHNOLOGY',
+  'CHINA',
+  'ECONOMY',
+  'EUROPE',
+]
+
+/** Index for sorting; unlisted categories sort after every listed one. */
+export function categoryRank(category: string): number {
+  const index = CATEGORY_ORDER.indexOf(category)
+  return index === -1 ? CATEGORY_ORDER.length : index
+}
+
+/**
+ * Categories that exist as tags but get no chip of their own.
+ *
+ * AI articles are filed under technology, so an "AI" chip would sit at the end of the bar
+ * showing the handful of articles whose headline named a model, next to a technology
+ * section holding all of them. Two chips for one subject, one of them apparently broken.
+ * The tag is still on the articles and still in the exported data.
+ */
+export const HIDDEN_CATEGORIES = new Set(['ARTIFICIAL_INTELLIGENCE'])
+
 export const UI_LANGUAGES = ['fr', 'zh', 'en'] as const
 export type UiLanguage = (typeof UI_LANGUAGES)[number]
 
@@ -80,6 +113,7 @@ const fr: Strings = {
   all: 'Tout',
   categories: {
     FRANCE: 'France',
+    CHINA: 'Chine',
     INTERNATIONAL: 'International',
     EUROPE: 'Europe',
     POLITICS: 'Politique',
@@ -143,6 +177,7 @@ const zh: Strings = {
   all: '全部',
   categories: {
     FRANCE: '法国',
+    CHINA: '中国',
     INTERNATIONAL: '国际',
     EUROPE: '欧洲',
     POLITICS: '政治',
@@ -206,6 +241,7 @@ const en: Strings = {
   all: 'All',
   categories: {
     FRANCE: 'France',
+    CHINA: 'China',
     INTERNATIONAL: 'International',
     EUROPE: 'Europe',
     POLITICS: 'Politics',

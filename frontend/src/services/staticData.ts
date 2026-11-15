@@ -45,9 +45,15 @@ function load() {
     let articlesResponse: Response
     let metaResponse: Response
     try {
+      // `no-cache` means "revalidate before using", not "do not cache": the browser still
+      // sends If-None-Match and a 304 costs nothing when the snapshot has not changed.
+      // Without it the HTTP cache serves the previous snapshot for GitHub Pages'
+      // max-age=600, and any intermediate proxy may hold it far longer - which on a phone
+      // is the difference between this morning's news and last night's.
+      const options: RequestInit = { cache: 'no-cache' }
       ;[articlesResponse, metaResponse] = await Promise.all([
-        fetch(`${BASE}/data/articles.json`),
-        fetch(`${BASE}/data/meta.json`),
+        fetch(`${BASE}/data/articles.json`, options),
+        fetch(`${BASE}/data/meta.json`, options),
       ])
     } catch {
       // Reset so a retry re-fetches rather than resolving the same rejection forever, and
@@ -86,7 +92,12 @@ function load() {
 }
 
 function matches(article: Article, filters: ArticleFilters): boolean {
-  if (filters.category?.length && !filters.category.includes(article.category)) return false
+  if (filters.category?.length) {
+    // Primary or secondary, matching the backend. Clicking "China" should find a French
+    // political story tagged China, not only the China desk's own articles.
+    const tags = [article.category, ...article.secondary_categories]
+    if (!filters.category.some((wanted) => tags.includes(wanted))) return false
+  }
   if (filters.language?.length && !filters.language.includes(article.language)) return false
   if (filters.publisher?.length && !filters.publisher.includes(article.publisher)) return false
   if (filters.q) {
@@ -135,7 +146,10 @@ export const staticApi = {
     const counts = new Map<string, number>()
     for (const article of articles) {
       if (article.language !== language) continue
-      counts.set(article.category, (counts.get(article.category) ?? 0) + 1)
+      // Secondary tags counted too, so the number matches what the chip will show.
+      for (const tag of new Set([article.category, ...article.secondary_categories])) {
+        counts.set(tag, (counts.get(tag) ?? 0) + 1)
+      }
     }
     return [...counts.entries()]
       .map(([category, count]) => ({ category, count }))

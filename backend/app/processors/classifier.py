@@ -101,7 +101,20 @@ KEYWORDS: dict[Category, tuple[str, ...]] = {
 }
 
 #: Geographic signals. Secondary to subject: see the module docstring.
+#:
+#: Order matters when several match and no subject was found: the first wins the primary
+#: slot. CHINA comes before INTERNATIONAL deliberately - an article about Beijing is China
+#: news first and world news second, and the reverse ordering buried the China desk inside
+#: a 400-article INTERNATIONAL pile.
 GEOGRAPHY: dict[Category, tuple[str, ...]] = {
+    Category.CHINA: (
+        "chine", "chinois", "chinoise", "china", "chinese", "pekin", "beijing", "shanghai",
+        "hong kong", "taiwan", "taipei", "xi jinping", "parti communiste chinois",
+        "communist party of china", "pcc", "yuan", "shenzhen", "guangzhou", "wuhan",
+        "xinjiang", "tibet", "ouighour", "uyghur", "huawei", "alibaba", "tencent",
+        "bytedance", "mer de chine", "south china sea", "detroit de taiwan",
+        "taiwan strait", "中国", "中共", "北京", "上海", "台湾", "香港", "习近平", "新疆",
+    ),
     Category.EUROPE: (
         "union europeenne", "european union", "bruxelles", "brussels", "commission europeenne",
         "european commission", "parlement europeen", "european parliament", "eurozone",
@@ -112,10 +125,10 @@ GEOGRAPHY: dict[Category, tuple[str, ...]] = {
         "assemblee nationale", "法国", "巴黎",
     ),
     Category.INTERNATIONAL: (
-        "etats unis", "united states", "washington", "chine", "china", "beijing", "pekin",
-        "russie", "russia", "moscou", "moscow", "ukraine", "kyiv", "kiev", "israel", "gaza",
-        "iran", "inde", "india", "japon", "japan", "bresil", "brazil", "afrique", "africa",
-        "onu", "united nations", "国际", "美国", "中国",
+        "etats unis", "united states", "washington", "russie", "russia", "moscou", "moscow",
+        "ukraine", "kyiv", "kiev", "israel", "gaza", "iran", "inde", "india", "japon",
+        "japan", "bresil", "brazil", "afrique", "africa", "onu", "united nations",
+        "国际", "美国",
     ),
 }
 
@@ -167,6 +180,18 @@ def classify_text(text: str) -> tuple[Category | None, list[Category]]:
     return best, geographies
 
 
+#: Subjects that are filed under a broader section rather than getting a chip of their own.
+#:
+#: AI is the whole point of the technology section for this reader, so splitting the two
+#: would leave both looking thin and put the AI news somewhere other than where someone
+#: looking for technology would click. The specific label survives in
+#: ``secondary_categories``, so nothing is lost and the two can be separated later by
+#: deleting one line.
+SUBJECT_PARENT: dict[Category, Category] = {
+    Category.ARTIFICIAL_INTELLIGENCE: Category.TECHNOLOGY,
+}
+
+
 def classify(article: Article, source_default: Category | None = None) -> Article:
     """Assigns ``category`` and ``secondary_categories`` in place and returns the article.
 
@@ -176,12 +201,28 @@ def classify(article: Article, source_default: Category | None = None) -> Articl
     """
     subject, geographies = classify_text(article.title)
 
+    detected = subject
+    if subject in SUBJECT_PARENT:
+        subject = SUBJECT_PARENT[subject]
+
+    # A source filed under a child category folds the same way, or an all-AI publisher
+    # would sit outside the technology section its articles belong in.
+    if source_default in SUBJECT_PARENT:
+        detected = detected or source_default
+        source_default = SUBJECT_PARENT[source_default]
+
+    # The narrower label is kept alongside, so "AI" is still recorded on an article filed
+    # under technology.
+    extra = [detected] if detected and detected is not subject else []
+
     if source_default and source_default is not Category.OTHER:
         primary = source_default
-        secondary = [c for c in ([subject] if subject else []) + geographies if c != primary]
+        secondary = [
+            c for c in extra + ([subject] if subject else []) + geographies if c != primary
+        ]
     elif subject:
         primary = subject
-        secondary = [c for c in geographies if c != primary]
+        secondary = [c for c in extra + geographies if c != primary]
     elif geographies:
         primary, *rest = geographies
         secondary = rest

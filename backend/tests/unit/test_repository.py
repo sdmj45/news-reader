@@ -207,3 +207,41 @@ class TestRunLog:
             })
         runs = repo.list_collection_runs()
         assert [r["run_id"] for r in runs] == ["r2", "r1", "r0"]
+
+
+class TestSecondaryCategoryFiltering:
+    """A chip shows everything tagged with its category, not only what is filed under it."""
+
+    def _seed(self, repo):
+        tagged = make_article("Xi Jinping et Macron", "https://a.fr/1", category=Category.POLITICS)
+        tagged.secondary_categories = [Category.CHINA]
+        filed = make_article("Pékin dévoile un plan", "https://a.fr/2", category=Category.CHINA)
+        other = make_article("Grève SNCF", "https://a.fr/3", category=Category.FRANCE)
+        repo.upsert_articles([tagged, filed, other])
+
+    def test_the_filter_matches_primary_or_secondary(self, repo):
+        self._seed(repo)
+        found = repo.list_articles(ArticleQuery(categories=(Category.CHINA,))).articles
+        assert {a.title for a in found} == {"Xi Jinping et Macron", "Pékin dévoile un plan"}
+
+    def test_unrelated_articles_are_not_matched(self, repo):
+        self._seed(repo)
+        found = repo.list_articles(ArticleQuery(categories=(Category.CHINA,))).articles
+        assert "Grève SNCF" not in {a.title for a in found}
+
+    def test_counts_agree_with_what_the_chip_will_show(self, repo):
+        # A count that disagreed with the list behind it would be worse than no count.
+        self._seed(repo)
+        counts = repo.count_by_category()
+        for category, expected in counts.items():
+            listed = repo.list_articles(
+                ArticleQuery(categories=(Category(category),), limit=100)
+            ).articles
+            assert len(listed) == expected, category
+
+    def test_several_categories_are_an_or(self, repo):
+        self._seed(repo)
+        found = repo.list_articles(
+            ArticleQuery(categories=(Category.CHINA, Category.FRANCE))
+        ).articles
+        assert len(found) == 3

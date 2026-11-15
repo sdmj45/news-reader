@@ -93,6 +93,16 @@ class RSSCollector(BaseCollector):
             if article.description_withheld_reason:
                 stats.descriptions_withheld_by_license += 1
 
+        if source.max_items_per_fetch:
+            # Newest first, then truncate. Feed order is not reliably chronological - some
+            # publishers put a sticky item at the top - so the cap sorts rather than slicing
+            # whatever happened to come first.
+            articles.sort(key=lambda a: a.published_at, reverse=True)
+            dropped = len(articles) - source.max_items_per_fetch
+            if dropped > 0:
+                articles = articles[: source.max_items_per_fetch]
+                stats.capped_by_domain += dropped
+
         # Set here as well as in collect() so that the coverage ratio is meaningful when
         # parse() is called on its own - which is how the parser is unit-tested.
         stats.parsed_items += len(articles)

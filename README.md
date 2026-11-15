@@ -17,16 +17,16 @@ Chinese, read them in a browser. Nothing is deployed anywhere — read
 | **Reading interface** | React + Vite + Tailwind. French headline with the Chinese underneath, categories, search, saved articles, light/dark, PWA |
 | **Chinese translation** | MyMemory, free and key-less. Measured good on real headlines; 100% success over a live pass |
 | **REST API** | FastAPI, read-only, cursor-paginated, CORS-restricted, rate-limited |
-| RSS/Atom collection | 29 sources — French, English, Chinese — all fetch-verified on 2026-11-14 |
+| RSS/Atom collection | 40 sources — French, English, Chinese — each fetch-verified before being added |
 | GDELT GAL collection | JSON-NL, schema **measured** from live data, ~1,800 articles per file |
 | Normalisation | URL canonicalisation, title cleaning, 40+ date formats, language tags |
 | Deduplication | Canonical-URL collapse; measured duplicate rate 0.9–6% per run |
 | Event clustering | Cross-publisher, multilingual (word tokens and CJK bigrams), links without merging |
-| Classification | 16 categories, source section → keyword count → abstain. No AI, no cost. |
-| Licence enforcement | Conservative by default, checked twice, 28 of 31 sources metadata-only |
+| Classification | 17 categories including a China desk; source section → keyword count → abstain. No AI, no cost. |
+| Licence enforcement | Conservative by default, checked twice, 40 of 43 sources metadata-only |
 | Persistence | SQLite with cursor pagination and the indexes Firestore will need |
 | Per-source health | Isolation, exponential backoff, ETag/cursor incremental collection |
-| Automated tests | **229 backend** (unit + integration + API), **23 browser end-to-end**, plus 33 live-data tests on demand |
+| Automated tests | **252 backend** (unit + integration + API), **23 browser end-to-end**, plus 45 live-data tests on demand |
 
 ## What does not work
 
@@ -52,9 +52,10 @@ Chinese, read them in a browser. Nothing is deployed anywhere — read
   about it rather than showing an empty field.
 * **The API rate limiter is per-process**, so it does not hold across Cloud Run instances.
   Fine for a household; must be replaced before public launch.
-* **Chinese coverage is thin** — three sources (DW, RFI, NYT), all foreign outlets' Chinese
-  services. Every other candidate refused the client or returned an unparsable body. See
-  [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md).
+* **China coverage is all foreign desks** — BBC中文, 自由亚洲, SCMP, Le Monde's China desk, DW
+  and RFI's Chinese services. No mainland publisher is included: every candidate probed
+  either refused the client, returned an unparsable body, or was a third-party mirror whose
+  completeness could not be established. See [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md).
 * **GDELT is disabled by default.** It works — the schema was measured, the collector is
   tested — but filtering it to French yields the *francophone world*, not French news: a
   Tunisian daily, an Algerian paper republishing its 2020 archive, a Senegalese site. It

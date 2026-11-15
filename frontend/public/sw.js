@@ -5,12 +5,20 @@
  * a train shows the interface and a clear "cannot reach the server" message rather than the
  * browser's error page.
  *
- * It does **not** cache API responses. News that is silently hours stale is worse than news
- * that is honestly absent, and a cached article list would be indistinguishable from a fresh
- * one. Every /api request goes to the network and fails visibly when it cannot.
+ * **It never caches the news.** News that is silently hours stale is worse than news that is
+ * honestly absent, because a stale list is indistinguishable from a fresh one.
+ *
+ * That rule was written in this comment from the first version and not actually implemented.
+ * The exclusion list covered `/api` and `/health` - the endpoints of a backend the deployed
+ * site does not use - and said nothing about `data/articles.json`, which is where the news
+ * lives in the static build. So the data fell through to the cache-first branch below, was
+ * stored on first visit, and was served from cache forever after. On a phone that had opened
+ * the site once, the headlines stopped changing: ten hours old while the desktop showed ten
+ * minutes. The exclusion now covers the data, and the cache name is bumped so that every
+ * install already carrying a stale copy discards it on the next visit.
  */
 
-const SHELL_CACHE = 'newsreader-shell-v2'
+const SHELL_CACHE = 'newsreader-shell-v3'
 
 // Everything here is relative to wherever this worker is served from, because that is not
 // always the domain root: a GitHub Pages project site lives at /<repo>/. This file is in
@@ -52,9 +60,16 @@ self.addEventListener('fetch', (event) => {
 
   const requestUrl = new URL(request.url)
   if (requestUrl.origin !== self.location.origin) return
-  // Never cache data. See the module comment.
+  // Never cache the news, in either data mode. See the module comment - getting this list
+  // wrong is what made a phone show ten-hour-old headlines.
   const path = requestUrl.pathname
-  if (path.startsWith(url('api')) || path === url('health')) return
+  if (
+    path.startsWith(url('data/')) || // the static snapshot: this is the news
+    path.startsWith(url('api')) || // the REST backend, when VITE_DATA_MODE=api
+    path === url('health')
+  ) {
+    return
+  }
 
   // Navigations: network first, shell from cache when offline.
   if (request.mode === 'navigate') {

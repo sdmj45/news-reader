@@ -91,3 +91,70 @@ class TestSourceDefault:
         )
         classify(article)
         assert len(article.secondary_categories) <= 3
+
+
+class TestChinaDesk:
+    """Added 2026-11-15 with the China section."""
+
+    @pytest.mark.parametrize(
+        "headline",
+        [
+            "Xi Jinping reçoit une délégation européenne",
+            "Beijing announces new export controls",
+            "中国发布新的经济数据",
+            "Huawei dévoile un nouveau processeur",
+            "Tensions in the Taiwan Strait after naval exercise",
+        ],
+    )
+    def test_china_is_detected(self, headline):
+        from app.processors.classifier import classify_text
+
+        _, geographies = classify_text(headline)
+        assert Category.CHINA in geographies, headline
+
+    def test_china_outranks_international_for_the_primary_slot(self):
+        # An article about Beijing is China news first and world news second. The reverse
+        # buried the China desk inside a 400-article INTERNATIONAL pile.
+        article = make_article("La Chine et les États-Unis reprennent le dialogue",
+                               "https://a.fr/1")
+        classify(article)
+        assert article.category is Category.CHINA
+        assert Category.INTERNATIONAL in article.secondary_categories
+
+    def test_a_french_story_about_china_keeps_china_as_a_tag(self):
+        # It is filed under its subject, but the China chip still finds it because the
+        # repository matches secondary categories too.
+        article = make_article("Xi Jinping rencontre Emmanuel Macron à Pékin", "https://a.fr/1")
+        classify(article)
+        assert Category.CHINA in [article.category, *article.secondary_categories]
+
+    def test_non_china_international_news_is_not_swept_in(self):
+        article = make_article("Washington impose des sanctions à Moscou", "https://a.fr/1")
+        classify(article)
+        assert Category.CHINA not in [article.category, *article.secondary_categories]
+
+
+class TestAiIsFiledUnderTechnology:
+    """One section, so a reader looking for technology finds the AI news in it."""
+
+    def test_ai_articles_are_primary_technology(self):
+        article = make_article("OpenAI publie un nouveau modèle de langage", "https://a.fr/1")
+        classify(article)
+        assert article.category is Category.TECHNOLOGY
+
+    def test_the_narrower_label_is_kept_as_a_secondary(self):
+        article = make_article("OpenAI publie un nouveau modèle de langage", "https://a.fr/1")
+        classify(article)
+        assert Category.ARTIFICIAL_INTELLIGENCE in article.secondary_categories
+
+    def test_ordinary_technology_is_not_mislabelled_as_ai(self):
+        article = make_article("Apple dévoile un nouveau smartphone", "https://a.fr/1")
+        classify(article)
+        assert article.category is Category.TECHNOLOGY
+        assert Category.ARTIFICIAL_INTELLIGENCE not in article.secondary_categories
+
+    def test_a_chinese_ai_story_lands_in_both_desks(self):
+        article = make_article("中国发布人工智能新规", "https://a.cn/1")
+        classify(article)
+        tags = [article.category, *article.secondary_categories]
+        assert Category.TECHNOLOGY in tags and Category.CHINA in tags

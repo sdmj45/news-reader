@@ -73,6 +73,13 @@ class NewsSource:
     verified_item_count: int | None = None
     verification_note: str = ""
     fetch_interval_minutes: int = 30
+    #: Newest items kept per fetch. Zero means keep everything the feed offers.
+    #:
+    #: Most feeds publish a window of recent articles. A few publish their entire archive:
+    #: OpenAI's returns 1,387 entries, which on first collection filled the database with
+    #: years of old posts and made the AI section's count meaningless. Capping keeps the
+    #: source useful without letting its back catalogue dominate.
+    max_items_per_fetch: int = 0
     notes: str = ""
 
     def __post_init__(self) -> None:

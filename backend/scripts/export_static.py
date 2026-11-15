@@ -190,9 +190,19 @@ def main() -> int:
             for language in settings.target_languages
         },
         "languages": dict(Counter(a.language for a in articles).most_common()),
+        # Counted over primary *and* secondary categories, because that is what the
+        # browser filters on. A chip whose number disagreed with the list behind it would
+        # be worse than a chip with no number.
         "categories": [
             {"category": category, "count": count}
-            for category, count in Counter(a.category.value for a in articles).most_common()
+            for category, count in Counter(
+                tag
+                for article in articles
+                for tag in {
+                    article.category.value,
+                    *(c.value for c in article.secondary_categories),
+                }
+            ).most_common()
         ],
         "publishers": sorted({a.publisher for a in articles}),
         "oldest": articles[-1].published_at.astimezone(UTC).isoformat(),

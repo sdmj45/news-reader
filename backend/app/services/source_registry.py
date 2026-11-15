@@ -1,13 +1,14 @@
 """The source registry: every feed this application is allowed to collect from.
 
-**Every URL in this file was fetched from this development host on 2026-11-14** by
-``scripts/probe_feeds.py``, and the entry records what came back: HTTP status, entry count and
-how many entries carried a description. No URL here was guessed. Endpoints that answered 403,
+**Every URL in this file was fetched from this development host** - the original
+registry on 2026-11-14, the China and technology desks on 2026-11-15 - by
+``scripts/probe_feeds.py``, and each entry records what came back: HTTP status, entry count
+and how many entries carried a description. No URL here was guessed. Endpoints that answered 403,
 404 or returned zero parsable entries are kept in :data:`REJECTED_CANDIDATES` with the reason,
 so nobody re-tries them next month and so the absence is evidence rather than an oversight.
 
-**Licensing is the other half of an entry, and the default is restrictive.** Of the thirty-one
-sources below (twenty-nine active), twenty-eight are ``UNKNOWN`` - headline, publisher,
+**Licensing is the other half of an entry, and the default is restrictive.** Of the forty-three
+sources below (forty-one active), forty are ``UNKNOWN`` - headline, publisher,
 timestamp and link, and nothing else - because no reuse permission has been researched for
 them. Three are not:
 
@@ -32,8 +33,10 @@ from app.models.licensing import LicenseType
 from app.models.source import NewsSource, SourceType, VerificationState
 
 _VERIFIED = "2026-11-14"
+#: The China and technology desks were probed a day later.
+_VERIFIED_DESKS = "2026-11-15"
 
-#: Boilerplate for the twenty-eight sources with no researched permission.
+#: Boilerplate for the forty sources with no researched permission.
 _NO_PERMISSION = (
     "None. No reuse permission has been researched or obtained for this publisher. "
     "Treated as UNKNOWN: title, publisher, publication time and original URL only."
@@ -51,6 +54,7 @@ def _unknown(
     *,
     category: Category | None = None,
     interval: int = 30,
+    max_items: int = 0,
     notes: str = "",
 ) -> NewsSource:
     """A fetch-verified source with no researched reuse permission - the common case."""
@@ -75,6 +79,7 @@ def _unknown(
         attribution_text=name,
         default_category=category.value if category else None,
         fetch_interval_minutes=interval,
+        max_items_per_fetch=max_items,
         notes=notes,
     )
 
@@ -116,6 +121,62 @@ SOURCES: tuple[NewsSource, ...] = (
     _unknown("sciencepost", "Sciencepost", "sciencepost.fr", "FR", "fr",
              "https://sciencepost.fr/feed/", 400, category=Category.SCIENCE, interval=120,
              notes="Returns 400 entries and 1.2 MB per fetch; polled every two hours."),
+
+    # ------------------------------------------------------------------ China desk
+    # Four angles on the same subject deliberately: a Chinese-language service, a
+    # dissident-adjacent broadcaster, an English Hong Kong daily and a French desk. One
+    # outlet's China coverage is one country's view of it.
+    _unknown("bbc-zhongwen", "BBC中文", "bbci.co.uk", "GB", "zh",
+             "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml", 42, category=Category.CHINA,
+             interval=45),
+    _unknown("rfa-mandarin", "自由亚洲电台", "rfa.org", "US", "zh",
+             "https://www.rfa.org/mandarin/rss2.xml", 30, category=Category.CHINA,
+             interval=60,
+             notes="186 kB per fetch; US-funded, which is worth knowing when reading it."),
+    _unknown("scmp-china", "South China Morning Post", "scmp.com", "HK", "en",
+             "https://www.scmp.com/rss/4/feed", 50, category=Category.CHINA, interval=45),
+    _unknown("lemonde-chine", "Le Monde", "lemonde.fr", "FR", "fr",
+             "https://www.lemonde.fr/chine/rss_full.xml", 20, category=Category.CHINA,
+             interval=60, notes="Le Monde's China desk, in French."),
+
+    # ------------------------------------------------------------------ Technology and AI
+    # AI articles are filed under TECHNOLOGY - see SUBJECT_PARENT in the classifier - so
+    # these all land in one section rather than splitting it in two.
+    _unknown("hackernews", "Hacker News", "news.ycombinator.com", "US", "en",
+             "https://hnrss.org/frontpage", 20, category=Category.TECHNOLOGY, interval=60,
+             notes=(
+                 "Link aggregation, not a publisher: each item points at someone else's "
+                 "site. Kept because the front page is where frontier engineering surfaces "
+                 "first, and the reader always lands on the original."
+             )),
+    _unknown("theverge", "The Verge", "theverge.com", "US", "en",
+             "https://www.theverge.com/rss/index.xml", 10, category=Category.TECHNOLOGY,
+             interval=60),
+    _unknown("techcrunch", "TechCrunch", "techcrunch.com", "US", "en",
+             "https://techcrunch.com/feed/", 20, category=Category.TECHNOLOGY, interval=60),
+    _unknown("mit-tech-review", "MIT Technology Review", "technologyreview.com", "US", "en",
+             "https://www.technologyreview.com/feed/", 10, category=Category.TECHNOLOGY,
+             interval=180),
+    _unknown("openai-news", "OpenAI", "openai.com", "US", "en",
+             "https://openai.com/blog/rss.xml", 1387,
+             category=Category.ARTIFICIAL_INTELLIGENCE, interval=360, max_items=15,
+             notes=(
+                 "First-party announcements. The feed carries the entire archive - 1,387 "
+                 "entries, 844 kB - and on the first collection that filled the database "
+                 "with years of old posts and made the AI count meaningless. Capped at the "
+                 "15 newest and polled every six hours."
+             )),
+    _unknown("lemonde-informatique", "Le Monde Informatique", "lemondeinformatique.fr",
+             "FR", "fr",
+             "https://www.lemondeinformatique.fr/flux-rss/thematique/toutes-les-actualites/rss.xml",
+             39, category=Category.TECHNOLOGY, interval=60,
+             notes="French-language IT and enterprise technology."),
+    _unknown("next-ink", "Next", "next.ink", "FR", "fr",
+             "https://next.ink/feed/", 50, category=Category.TECHNOLOGY, interval=120,
+             notes="367 kB per fetch. French technology journalism, successor to Next INpact."),
+    _unknown("numerama", "Numerama", "numerama.com", "FR", "fr",
+             "https://www.numerama.com/feed/", 15, category=Category.TECHNOLOGY,
+             interval=60),
 
     # ------------------------------------------------------------------ Europe, institutions
     NewsSource(
@@ -360,6 +421,20 @@ REJECTED_CANDIDATES: dict[str, str] = {
         "the same result (feedparser bozo). The body is served but is not a feed.",
     "https://www.voachinese.com/api/zkvypeuikq":
         "HTTP 200 with an 11-byte body on 2026-11-14.",
+    # Probed 2026-11-15 while building the China and technology desks.
+    "https://www.voachinese.com/api/zrqiteuuir":
+        "HTTP 200 with a 988-byte body and 0 entries on 2026-11-15. VOA's Chinese feed "
+        "endpoints are opaque API ids and none of the ones tried returned items.",
+    "https://www.zaobao.com/rss/realtime/china":
+        "HTTP 404 on 2026-11-15 after redirecting to zaobao.com.sg.",
+    "https://chinadigitaltimes.net/chinese/feed":
+        "HTTP 200, 7 entries on 2026-11-15. Reachable and parsable; left out because it is "
+        "an advocacy publication on censorship rather than a news desk, and adding it is an "
+        "editorial decision for the operator rather than a technical one.",
+    "https://venturebeat.com/category/ai/feed/":
+        "HTTP 429 on 2026-11-15. VentureBeat rate-limits this client; not worked around.",
+    "http://export.arxiv.org/rss/cs.AI":
+        "HTTP 200 but 0 parsable entries on 2026-11-15; arXiv's RSS needs a different path.",
     "https://feedx.net/rss/zaobao.xml":
         "HTTP 200, 20 entries on 2026-11-14. Rejected on provenance, not reachability: a "
         "third-party mirror "
