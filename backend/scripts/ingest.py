@@ -39,6 +39,7 @@ def _format(report) -> str:
         f"  retention        {report.articles_too_old} too old to keep, "
         f"{report.articles_pruned} aged out and deleted",
         f"  excluded         {report.articles_excluded} in unwanted sections",
+        f"  re-tagged        {report.articles_retagged} stored articles changed category",
         f"  events           {report.events_formed} "
         f"({report.multi_publisher_events} across publishers)",
         f"  descriptions     {report.descriptions_withheld_by_license} withheld by licence",

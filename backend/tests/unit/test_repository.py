@@ -311,16 +311,12 @@ class TestTranslationQueue:
         ]
 
 
-class TestExcludedCategories:
-    def test_deletes_only_the_named_primary_categories(self, repo):
-        repo.upsert_articles([
-            make_article("Match", "https://a.fr/s", category=Category.SPORTS),
-            make_article("Film", "https://a.fr/c", category=Category.CULTURE),
-            make_article("Budget", "https://a.fr/e", category=Category.ECONOMY),
-        ])
-        assert repo.delete_in_categories(frozenset({"SPORTS", "CULTURE"})) == 2
-        assert [a.title for a in repo.list_articles(ArticleQuery()).articles] == ["Budget"]
+class TestDeleteArticles:
+    def test_deletes_only_the_named_articles(self, repo):
+        articles = seed(repo, count=3)
+        assert repo.delete_articles([articles[0].id, "no-such-id"]) == 1
+        assert repo.count_articles() == 2
 
-    def test_an_empty_set_deletes_nothing(self, repo):
-        repo.upsert_articles([make_article("Match", "https://a.fr/s", category=Category.SPORTS)])
-        assert repo.delete_in_categories(frozenset()) == 0
+    def test_handles_more_ids_than_the_parameter_limit(self, repo):
+        seed(repo, count=3)
+        assert repo.delete_articles([f"missing-{i}" for i in range(1200)]) == 0

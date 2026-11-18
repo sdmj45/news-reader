@@ -368,13 +368,14 @@ class SQLiteArticleRepository:
         ).fetchall()
         return [_article_of(r) for r in rows]
 
-    def delete_in_categories(self, categories: frozenset[str]) -> int:
-        if not categories:
-            return 0
-        names = sorted(categories)
-        deleted = self._conn.execute(
-            f"DELETE FROM articles WHERE category IN ({','.join('?' * len(names))})", names
-        ).rowcount
+    def delete_articles(self, article_ids: list[str]) -> int:
+        deleted = 0
+        # Chunked for SQLite's parameter limit, as in existing_ids.
+        for start in range(0, len(article_ids), 500):
+            chunk = article_ids[start : start + 500]
+            deleted += self._conn.execute(
+                f"DELETE FROM articles WHERE id IN ({','.join('?' * len(chunk))})", chunk
+            ).rowcount
         self._conn.commit()
         return deleted
 

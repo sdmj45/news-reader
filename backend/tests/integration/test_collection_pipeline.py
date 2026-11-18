@@ -569,3 +569,53 @@ class TestExcludedSections:
         source = make_source(feed_url="https://a.test/feed.xml", category=Category.TECHNOLOGY)
         report = await ingest(repo, Settings(sqlite_path=":memory:"), [source])
         assert report.articles_excluded == 0 and repo.count_articles() == 1
+
+
+class TestRetagStored:
+    """Articles stored under older rules are brought up to date on the next run."""
+
+    @staticmethod
+    def stored(title: str, url: str, category: Category):
+        from tests.conftest import make_article
+
+        article = make_article(title, url, category=category)
+        article.country = "FR"
+        return article
+
+    @respx.mock
+    async def test_old_articles_gain_new_tags_and_unwanted_ones_are_deleted(self, repo):
+        source = make_source(feed_url="https://a.test/feed.xml", category=Category.FRANCE)
+        source_id = source.source_id
+        policy = self.stored("Le SMIC augmentera de 2 % au 1er janvier", "https://a.test/smic",
+                             Category.FRANCE)
+        sport = self.stored("Ligue 1 : le PSG remporte le match au Parc", "https://a.test/psg",
+                            Category.FRANCE)
+        for article in (policy, sport):
+            article.source_id = source_id
+        repo.upsert_articles([policy, sport])
+        # The feed has nothing new - the case where a 304 used to leave old tags in place.
+        respx.get("https://a.test/feed.xml").mock(
+            return_value=httpx.Response(200, text=TestRetention.feed())
+        )
+
+        report = await ingest(repo, Settings(sqlite_path=":memory:"), [source])
+
+        assert report.articles_retagged == 1
+        assert report.articles_excluded == 1
+        assert repo.get_article(sport.id) is None
+        assert Category.FRANCE_POLICY in repo.get_article(policy.id).secondary_categories
+
+    @respx.mock
+    async def test_articles_from_sources_outside_the_run_are_left_alone(self, repo):
+        orphan = self.stored("Ligue 1 : le PSG remporte le match", "https://b.test/psg",
+                             Category.FRANCE)
+        orphan.source_id = "not-in-this-run"
+        repo.upsert_articles([orphan])
+        respx.get("https://a.test/feed.xml").mock(
+            return_value=httpx.Response(200, text=TestRetention.feed())
+        )
+
+        await ingest(repo, Settings(sqlite_path=":memory:"),
+                     [make_source(feed_url="https://a.test/feed.xml")])
+
+        assert repo.get_article(orphan.id) is not None

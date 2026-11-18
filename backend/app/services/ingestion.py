@@ -13,7 +13,10 @@ The stage order is not arbitrary:
    and a crashed run can simply be run again.
 6. **Record health**, per source, including the failures - which is what makes the backoff in
    the manager work on the next run.
-7. **Prune** articles older than ``RETENTION_DAYS``. Articles that old are also dropped at
+7. **Re-tag** every stored article with the current rules (:func:`_retag_stored`), so a
+   change to the classifier or to ``EXCLUDED_CATEGORIES`` applies to what is already on
+   the site, not only to what arrives next.
+8. **Prune** articles older than ``RETENTION_DAYS``. Articles that old are also dropped at
    step 2, before they are written: feeds keep listing week-old items, and an article deleted
    but not filtered would come back as "new" on the next run and be translated again.
 
@@ -42,7 +45,7 @@ from app.models.licensing import allows_description_display, allows_summary_publ
 from app.models.rights import effective_license, guard_personal_use
 from app.models.source import NewsSource, SourceHealth
 from app.processors import classifier, dedup
-from app.repositories.base import ArticleRepository
+from app.repositories.base import ArticleQuery, ArticleRepository
 from app.services import source_registry
 
 logger = logging.getLogger(__name__)
@@ -91,6 +94,8 @@ class IngestionReport:
     #: Classified into a section listed in EXCLUDED_CATEGORIES, so never written. Includes
     #: any already stored, which are deleted on the same run.
     articles_excluded: int = 0
+    #: Stored articles whose categories changed when re-tagged with the current rules.
+    articles_retagged: int = 0
     duplicate_rate: float = 0.0
     events_formed: int = 0
     multi_publisher_events: int = 0
@@ -264,8 +269,9 @@ async def run_ingestion(
     report.articles_unchanged = upsert.unchanged
     if cutoff is not None:
         report.articles_pruned = repository.delete_published_before(cutoff)
-    # Also catches articles stored before a section was excluded.
-    report.articles_excluded += repository.delete_in_categories(excluded)
+    retagged, removed = _retag_stored(repository, sources_by_id, excluded)
+    report.articles_retagged = retagged
+    report.articles_excluded += removed
 
     for article in unique:
         report.categories[article.category.value] = report.categories.get(article.category.value, 0) + 1
@@ -305,6 +311,53 @@ def _is_excluded(article: Article, source: NewsSource, excluded: frozenset[str])
         return False
     tags = (article.category, *article.secondary_categories)
     return any(c.value in excluded for c in tags)
+
+
+def _retag_stored(
+    repository: ArticleRepository,
+    sources_by_id: dict[str, NewsSource],
+    excluded: frozenset[str],
+) -> tuple[int, int]:
+    """Re-classifies every stored article and deletes those now in an excluded section.
+
+    Classification used to happen once, on arrival, so a rule change reached the site only
+    as old articles aged out - and most feeds answer 304 Not Modified, so their articles are
+    not re-collected either. On 2026-11-18, after the French-policy tag shipped, the live
+    site showed 3 policy articles where the same rules found 18 on a fresh database. The
+    store is bounded by the retention window - about a thousand rows - and classification
+    is keyword matching, so doing it every run costs well under a second.
+
+    Articles from a source not in this run (``COLLECTOR_ONLY_SOURCES``) are left alone:
+    without the source there is no section default to classify against.
+
+    Returns ``(retagged, deleted)``.
+    """
+    changed: list[Article] = []
+    doomed: list[str] = []
+    cursor: str | None = None
+    while True:
+        page = repository.list_articles(
+            ArticleQuery(exclude_duplicates=False, limit=200, cursor=cursor)
+        )
+        for article in page.articles:
+            source = sources_by_id.get(article.source_id)
+            if source is None:
+                continue
+            before = (article.category, list(article.secondary_categories))
+            default = Category(source.default_category) if source.default_category else None
+            classifier.classify(article, default)
+            if excluded and _is_excluded(article, source, excluded):
+                doomed.append(article.id)
+            elif (article.category, article.secondary_categories) != before:
+                changed.append(article)
+        cursor = page.next_cursor
+        if not cursor:
+            break
+
+    if changed:
+        repository.upsert_articles(changed)
+    deleted = repository.delete_articles(doomed) if doomed else 0
+    return len(changed), deleted
 
 
 def _record(

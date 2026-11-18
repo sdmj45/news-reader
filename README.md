@@ -26,7 +26,7 @@ Chinese, read them in a browser. Nothing is deployed anywhere — read
 | Licence enforcement | Conservative by default, checked twice, 61 of 64 active sources metadata-only |
 | Persistence | SQLite with cursor pagination and the indexes Firestore will need; keeps the last `RETENTION_DAYS` (2) days and deletes the rest |
 | Per-source health | Isolation, exponential backoff, ETag/cursor incremental collection |
-| Automated tests | **314 backend** (unit + integration + API), **23 browser end-to-end**, plus 45 live-data tests on demand |
+| Automated tests | **316 backend** (unit + integration + API), **23 browser end-to-end**, plus 45 live-data tests on demand |
 
 ## What does not work
 
