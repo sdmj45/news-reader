@@ -18,7 +18,7 @@ from app.services.translation.base import (
     TranslationRequest,
 )
 from app.services.translation.factory import build_translator
-from app.services.translation.mymemory import ENDPOINT, MyMemoryTranslator
+from app.services.translation.mymemory import ENDPOINT, MyMemoryTranslator, is_name_only
 from app.services.translation.null_translator import NullTranslator
 from app.services.translation.runner import daily_budget, run_translation
 from tests.conftest import make_article
@@ -92,6 +92,19 @@ class TestMyMemory:
             TranslationRequest("Bonjour", "fr", "zh")
         )
         assert result is None
+
+    @respx.mock
+    @pytest.mark.parametrize("name", ["Talos Linux", "llm 0.37.3", "GPT-6", "OpenAI DevDay"])
+    async def test_a_name_comes_back_as_itself_and_that_is_its_translation(self, client, name):
+        # Seen live on 2026-11-18: these were the last two untranslated headlines, retried
+        # every run because a name has no Chinese form other than itself.
+        respx.get(ENDPOINT).mock(return_value=httpx.Response(200, json=ok_body(name)))
+        result = await MyMemoryTranslator(client).translate(TranslationRequest(name, "en", "zh"))
+        assert result is not None and result.text == name
+
+    @pytest.mark.parametrize("text", ["Bonjour", "Grève générale", "La réforme des retraites"])
+    def test_ordinary_words_are_not_names(self, text):
+        assert not is_name_only(text)
 
     @respx.mock
     async def test_a_warning_in_the_body_is_not_a_translation(self, client):

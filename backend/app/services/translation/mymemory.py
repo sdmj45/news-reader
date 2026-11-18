@@ -70,6 +70,27 @@ _ERROR_MARKERS = (
 )
 
 
+def is_name_only(text: str) -> bool:
+    """Whether a headline is a product or project name that has no translation.
+
+    At most four words, each capitalised, containing a digit, or three letters or fewer.
+    "Talos Linux" and "llm 0.37.3" qualify; "Grève générale" does not, because "générale"
+    is an ordinary word that a working translation would have changed.
+
+    A single word is ambiguous - "Bonjour" is capitalised too - so it qualifies only with a
+    digit or a capital after the first letter: "GPT-6", "iOS", "OpenAI".
+    """
+    words = text.split()
+    if not words or len(words) > 4:
+        return False
+    if len(words) == 1:
+        word = words[0]
+        return any(ch.isdigit() for ch in word) or any(ch.isupper() for ch in word[1:])
+    return all(
+        w[0].isupper() or any(ch.isdigit() for ch in w) or len(w) <= 3 for w in words
+    )
+
+
 class MyMemoryTranslator:
     """Free translation through MyMemory's public API."""
 
@@ -162,7 +183,10 @@ class MyMemoryTranslator:
 
         # An unchanged string is not a translation. It happens when MyMemory has no memory
         # for the pair and echoes the input, and it would show French text labelled Chinese.
-        if translated == text:
+        # The exception is a headline that is only a name - "Talos Linux", "llm 0.37.3" -
+        # whose Chinese rendering *is* the name. Rejecting those retried them every run,
+        # forever, and left them as the only untranslated headlines on the site.
+        if translated == text and not is_name_only(text):
             return None
 
         return TranslationResult(
