@@ -43,6 +43,48 @@ class TestUpsert:
         assert (report.inserted, report.updated, report.unchanged) == (0, 1, 2)
         assert repo.get_article(articles[0].id).title == "Titre corrigé"
 
+    def test_re_collecting_an_article_keeps_its_translation(self, repo):
+        # The bug that emptied the live site: every feed re-delivers its current items, the
+        # collector builds them fresh with no translation, and the upsert wrote that empty
+        # translation over the stored one. 490 Chinese headlines at 09:56 were 218 by 21:20,
+        # while the day's quota had been spent translating them.
+        stored = make_article("Grève à la SNCF", "https://a.fr/1", published_at=NOW)
+        stored.translated_title = {"zh": "法国国铁罢工"}
+        stored.translated_summary = {"zh": "摘要"}
+        stored.generated_summary = "Un résumé."
+        stored.provenance.translation_model = "mymemory@1"
+        repo.upsert_articles([stored])
+
+        recollected = make_article("Grève à la SNCF", "https://a.fr/1", published_at=NOW)
+        report = repo.upsert_articles([recollected])
+        assert report.unchanged == 1
+
+        kept = repo.get_article(stored.id)
+        assert kept.translated_title == {"zh": "法国国铁罢工"}
+        assert kept.translated_summary == {"zh": "摘要"}
+        assert kept.generated_summary == "Un résumé."
+        assert kept.provenance.translation_model == "mymemory@1"
+
+    def test_a_new_translation_is_added_to_the_stored_ones(self, repo):
+        article = make_article("Grève", "https://a.fr/1", published_at=NOW)
+        article.translated_title = {"en": "Strike"}
+        repo.upsert_articles([article])
+
+        article.translated_title = {"zh": "罢工"}
+        repo.upsert_articles([article])
+        assert repo.get_article(article.id).translated_title == {"en": "Strike", "zh": "罢工"}
+
+    def test_a_changed_headline_drops_the_old_translation(self, repo):
+        # The translation is of the old headline, so keeping it would put a wrong Chinese
+        # line under the corrected French one. Dropping it puts it back in the queue.
+        article = make_article("Grève à la SNCF", "https://a.fr/1", published_at=NOW)
+        article.translated_title = {"zh": "法国国铁罢工"}
+        repo.upsert_articles([article])
+
+        corrected = make_article("Grève levée à la SNCF", "https://a.fr/1", published_at=NOW)
+        assert repo.upsert_articles([corrected]).updated == 1
+        assert repo.get_article(article.id).translated_title == {}
+
     def test_re_running_a_collection_does_not_duplicate(self, repo):
         seed(repo, 5)
         seed(repo, 5)

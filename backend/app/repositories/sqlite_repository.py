@@ -525,10 +525,37 @@ class SQLiteArticleRepository:
 
 _COLUMNS = ["id", "url", "canonical_url", "content_hash", "title", "original_title", "publisher", "domain", "country", "language", "source_id", "published_at", "discovered_at", "author", "image_url", "original_description", "description_withheld_reason", "offered_description_chars", "category", "secondary_categories", "license_status", "summary_reuse_allowed", "attribution_text", "generated_summary", "translated_title", "translated_summary", "provenance", "body_paragraphs", "processing_status", "duplicate_of", "event_id", "created_at", "updated_at"]
 
+# Fields produced *after* collection - translations, a generated summary and the record of
+# what produced them. A collector builds every article fresh, so these are always empty on
+# an article it re-delivers, and a plain overwrite erased them: each run wiped the Chinese
+# headline of every article its feeds still listed, and the day's translation quota was spent
+# re-translating the same headlines. 490 Chinese headlines at 09:56 on 2026-11-18 were 218
+# by 21:20, and the live site showed 14% translated.
+#
+# While the headline is unchanged (same content_hash) the stored values are kept and the
+# incoming ones merged on top, so a new translation still lands. When the headline changes
+# the stored translation is of the old wording and is dropped.
+_SAME_HEADLINE = "articles.content_hash = excluded.content_hash"
+_KEEP_WHEN_UNCHANGED = {
+    "translated_title": "json_patch(articles.translated_title, excluded.translated_title)",
+    "translated_summary": "json_patch(articles.translated_summary, excluded.translated_summary)",
+    "generated_summary": "COALESCE(excluded.generated_summary, articles.generated_summary)",
+    # json_patch removes a key whose patch value is null, so _row_of leaves unset ones out.
+    "provenance": "json_patch(articles.provenance, excluded.provenance)",
+}
+
+
+def _assignment(column: str) -> str:
+    merged = _KEEP_WHEN_UNCHANGED.get(column)
+    if merged is None:
+        return f"{column}=excluded.{column}"
+    return f"{column}=CASE WHEN {_SAME_HEADLINE} THEN {merged} ELSE excluded.{column} END"
+
+
 _UPSERT_SQL = (
     f"INSERT INTO articles ({','.join(_COLUMNS)}) VALUES ({','.join('?' * len(_COLUMNS))}) "
     f"ON CONFLICT(id) DO UPDATE SET "
-    + ",".join(f"{c}=excluded.{c}" for c in _COLUMNS if c not in ("id", "created_at"))
+    + ",".join(_assignment(c) for c in _COLUMNS if c not in ("id", "created_at"))
 )
 
 
@@ -547,7 +574,7 @@ def _row_of(article: Article, now: str) -> tuple:
         json.dumps(article.translated_summary, ensure_ascii=False),
         json.dumps(
             {k: _iso(v) if isinstance(v, datetime) else v
-             for k, v in vars(article.provenance).items()}
+             for k, v in vars(article.provenance).items() if v is not None}
         ),
         json.dumps(article.body_paragraphs, ensure_ascii=False),
         article.processing_status.value, article.duplicate_of, article.event_id,
