@@ -107,8 +107,20 @@ async def main() -> int:
         else:
             print(f"\n  database now holds {repository.count_articles()} articles")
 
-    # A run in which every source failed is a failure, even though no exception was raised.
-    return 0 if report.sources_succeeded > 0 or report.sources_attempted == 0 else 1
+    return exit_code(report)
+
+
+def exit_code(report) -> int:
+    """1 when every source that was actually fetched failed; 0 otherwise.
+
+    A run in which every source failed is a failure, even though no exception was raised.
+    A run in which every source was *skipped* is not: each was fetched too recently to be
+    due, which is what a run soon after another looks like. Counting skips as failures
+    failed the publish run of 2026-11-18 10:15, twenty minutes after the previous one,
+    with no source in error.
+    """
+    fetched = report.sources_attempted - report.sources_skipped
+    return 0 if report.sources_succeeded > 0 or fetched == 0 else 1
 
 
 if __name__ == "__main__":

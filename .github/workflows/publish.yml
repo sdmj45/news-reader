@@ -31,7 +31,9 @@ on:
   workflow_dispatch: # the "Run workflow" button, which also resets the 60-day clock
   push:
     branches: [main]
-    paths: ["frontend/**", ".github/workflows/publish.yml"]
+    # The backend decides what is published - sources, sections, translation - so a change
+    # there is published at once rather than at the next scheduled run, up to three hours on.
+    paths: ["frontend/**", "backend/**", ".github/workflows/publish.yml"]
 
 permissions:
   contents: read
