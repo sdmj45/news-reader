@@ -185,15 +185,69 @@ def _compile(table: dict[Category, tuple[str, ...]]) -> dict[Category, re.Patter
 
 _SUBJECT_PATTERNS = _compile(KEYWORDS)
 _GEOGRAPHY_PATTERNS = _compile(GEOGRAPHY)
-#: Whole words, unlike the subject stems above: "visa" must not match "visages".
-_POLICY_PATTERN = re.compile(
-    "|".join(rf"\b{re.escape(term)}\b" for term in POLICY_TERMS)
+#: Other countries and their institutions. A policy headline naming one of these, and not
+#: France, is about someone else's rules: on 2026-11-18 that was an Italian law, US visa
+#: limits, ICE arrests, the Canary Islands and a British reform, all from French
+#: publishers.
+FOREIGN_TERMS: tuple[str, ...] = (
+    "italie", "italien", "italienne", "meloni", "espagne", "espagnol", "canaries",
+    "allemagne", "allemand", "allemande", "royaume uni", "britannique", "londres",
+    "belgique", "suisse", "pays bas", "portugal", "pologne", "hongrie", "grece", "irlande",
+    "etats unis", "americain", "americaine", "washington", "trump", "ice", "canada",
+    "quebec", "australie", "japon", "inde", "chine", "russie", "ukraine", "israel",
+    "iran", "turquie", "maroc", "algerie", "tunisie", "senegal", "rwanda", "bresil",
+    "mexique", "argentine",
+    "italy", "spain", "germany", "united kingdom", "britain", "united states", "australia",
+)
+
+#: Election-campaign coverage. These headlines use every policy word - pensions, tax, the
+#: minimum wage - for proposals, not rules. Measured on 2026-11-18: about 25 of the 57
+#: tagged articles were Marine Le Pen's pension plan, candidate debates and editorials.
+CAMPAIGN_TERMS: tuple[str, ...] = (
+    "presidentielle", "presidentielles", "candidat", "candidate", "candidats", "primaire",
+    "le pen", "rn", "rassemblement national", "melenchon", "lfi", "bardella", "retailleau",
+    "attal", "edouard philippe", "zemmour", "programme", "propose", "promet", "editorial",
+    "debat", "en direct", "sondage", "etes vous favorable", "meeting", "8h30 franceinfo",
+)
+
+#: Words that say a rule has actually been decided or takes effect. A campaign headline
+#: carrying one of these is still news about the rules ("le Sénat adopte", "entre en
+#: vigueur"), so it keeps the tag.
+DECIDED_TERMS: tuple[str, ...] = (
+    "entre en vigueur", "entrent en vigueur", "ce qui change", "ce qui a change", "decret",
+    "journal officiel", "adopte", "adoptee", "adoptent", "vote", "votee", "promulgue",
+    "promulguee", "au 1er janvier", "a partir du 1er", "retablit", "rejette",
 )
 
 
+def _whole_words(terms: tuple[str, ...]) -> re.Pattern[str]:
+    """Whole words, unlike the subject stems above: "visa" must not match "visages"."""
+    return re.compile("|".join(rf"\b{re.escape(term)}\b" for term in terms))
+
+
+_POLICY_PATTERN = _whole_words(POLICY_TERMS)
+_FOREIGN_PATTERN = _whole_words(FOREIGN_TERMS)
+_CAMPAIGN_PATTERN = _whole_words(CAMPAIGN_TERMS)
+_DECIDED_PATTERN = _whole_words(DECIDED_TERMS)
+
+
 def is_policy_headline(text: str) -> bool:
-    """Whether a headline is about a public rule or policy, by :data:`POLICY_TERMS`."""
-    return bool(_POLICY_PATTERN.search(f" {normalise_title(text)} "))
+    """Whether a headline is about a French public rule, as opposed to mentioning one.
+
+    Three tests, in order: it names a policy subject (:data:`POLICY_TERMS`); it is not about
+    another country unless it also names France (:data:`FOREIGN_TERMS`); and if it is
+    campaign coverage (:data:`CAMPAIGN_TERMS`), it reports a decision rather than a
+    proposal (:data:`DECIDED_TERMS`).
+    """
+    haystack = f" {normalise_title(text)} "
+    if not _POLICY_PATTERN.search(haystack):
+        return False
+    if _FOREIGN_PATTERN.search(haystack) and not _GEOGRAPHY_PATTERNS[Category.FRANCE].search(
+        haystack
+    ):
+        return False
+    is_campaign = _CAMPAIGN_PATTERN.search(haystack)
+    return not is_campaign or bool(_DECIDED_PATTERN.search(haystack))
 
 
 def _is_french(article: Article, geographies: list[Category]) -> bool:

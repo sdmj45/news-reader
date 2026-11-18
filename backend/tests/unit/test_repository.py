@@ -311,6 +311,18 @@ class TestTranslationQueue:
         ]
 
 
+class TestTranslationPriority:
+    def test_french_policy_is_translated_before_everything_else(self, repo):
+        news = make_article("Flash", "https://a.fr/flash", published_at=NOW)
+        policy = make_article("Le SMIC augmente", "https://a.fr/smic", publisher="Other",
+                              published_at=NOW - timedelta(days=1))
+        policy.secondary_categories = [Category.FRANCE_POLICY]
+        for article in (news, policy):
+            article.summary_reuse_allowed = True
+        repo.upsert_articles([news, policy])
+        assert [a.title for a in repo.list_untranslated("zh", limit=1)] == ["Le SMIC augmente"]
+
+
 class TestDeleteArticles:
     def test_deletes_only_the_named_articles(self, repo):
         articles = seed(repo, count=3)

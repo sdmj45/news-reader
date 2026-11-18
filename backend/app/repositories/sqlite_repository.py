@@ -337,6 +337,10 @@ class SQLiteArticleRepository:
         front page had 26 of 64. The round-robin mirrors the snapshot's per-publisher cap,
         so the budget follows what the site actually shows.
 
+        French policy articles come before the round-robin. They are a few a day, they are
+        the section this reader most needs in Chinese, and on 2026-11-18 only 3 of 57 had
+        been translated.
+
         Articles already in ``target_language`` are excluded here, not skipped by the runner:
         skipping them there meant each one held a place in the queue on every run, forever.
         Articles whose last attempt failed come after every untried one for the same reason.
@@ -362,7 +366,12 @@ class SQLiteArticleRepository:
                      AND json_extract(translated_title, ?) IS NULL
                      AND language != ?{after_clause}
                )
-               ORDER BY (processing_status = ?), publisher_rank, published_at DESC
+               ORDER BY (processing_status = ?),
+                        NOT EXISTS (
+                            SELECT 1 FROM json_each(secondary_categories)
+                            WHERE value = 'FRANCE_POLICY'
+                        ),
+                        publisher_rank, published_at DESC
                LIMIT ?""",
             params,
         ).fetchall()

@@ -167,6 +167,11 @@ class TestFrancePolicyTag:
         "Plans d’épargne-retraite : ce qui a changé en 2026",
         "Le SMIC augmentera de 2 % au 1er janvier",
         "Impôt sur le revenu : le barème revalorisé dans le projet de loi de finances",
+        # Campaign words, but a decision: still news about the rules.
+        "Budget de la Sécu : le Sénat rétablit la réforme des retraites",
+        "DPE : l’Assemblée vote un amendement du RN sur les locations",
+        # A foreign country named alongside France.
+        "Visa : la France et l'Italie harmonisent leurs règles pour les étudiants",
     ])
     def test_rule_changes_in_french_news_are_tagged(self, headline):
         article = make_article(headline, "https://a.fr/1")
@@ -199,6 +204,14 @@ class TestFrancePolicyTag:
         "Nvidia écarte le retour de Jensen Huang",
         # Whole words only: "visa" must not match "visages".
         "Cet homme voit d’étranges visages chez les gens",
+        # Another country's rules, from a French publisher (all seen live on 2026-11-18).
+        "Italie : un projet de loi controversé sur l'antisémitisme adopté par les députés",
+        "États-Unis : un juge fédéral annule les limites de visa pour les étudiants",
+        "Royaume-Uni : une réforme « radicale » pour remettre dans l’emploi une génération",
+        # Campaign proposals, not rules.
+        "Présidentielle 2027 : Marine Le Pen dévoile sa réforme des retraites",
+        "Impôts, logement, Smic: ce qu'il faut retenir du débat entre cinq candidats",
+        "L’éditorial : « Le en même temps du RN sur les retraites »",
     ])
     def test_ordinary_french_news_is_not_tagged(self, headline):
         article = make_article(headline, "https://a.fr/3")
