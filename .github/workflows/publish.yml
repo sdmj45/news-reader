@@ -82,7 +82,9 @@ jobs:
       TRANSLATE_CONTACT_EMAIL: ${{ vars.TRANSLATE_CONTACT_EMAIL }}
 
       # The reserve per remaining run (see TRANSLATE_DAILY_CHARACTERS above), and the
-      # budget of an ordinary run. The provider counts characters, not
+      # budget of an ordinary run. 3,500 is ~45 headlines, above the ~35 new articles a run
+      # brings; 6,000 held back so much for later runs that a backlog took a day to clear.
+      # The provider counts characters, not
       # articles. Measured: an average headline is 77 characters. This workflow runs eight
       # times a day, so the day's allowance divided by eight is:
       #
@@ -91,7 +93,7 @@ jobs:
       #
       # Set from whether the address is configured, rather than assuming the generous case:
       # a fixed 6,000 without it would hit HTTP 429 on the second run of every day.
-      TRANSLATE_MAX_CHARACTERS_PER_RUN: ${{ vars.TRANSLATE_CONTACT_EMAIL && '6000' || '600' }}
+      TRANSLATE_MAX_CHARACTERS_PER_RUN: ${{ vars.TRANSLATE_CONTACT_EMAIL && '3500' || '600' }}
 
       # Descriptions cost 260 characters against a headline's 77, which would cut the day's
       # coverage from ~650 headlines to ~150 pairs. Headlines are the product.
@@ -164,7 +166,12 @@ jobs:
         # A translation failure must not block publication: yesterday's Chinese plus today's
         # French is a working site, and a red build over a third party's quota is noise.
         continue-on-error: true
-        run: python -m scripts.translate
+        # Also written to the run's summary page. With continue-on-error a failed or
+        # quota-limited pass is otherwise invisible: the run shows green either way.
+        run: |
+          set -o pipefail
+          python -m scripts.translate | tee translate-report.txt
+          { echo "### Translation"; echo '```'; cat translate-report.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Export the static snapshot
         working-directory: backend
