@@ -35,6 +35,8 @@ from app.models.source import NewsSource, SourceType, VerificationState
 _VERIFIED = "2026-11-14"
 #: The China and technology desks were probed a day later.
 _VERIFIED_DESKS = "2026-11-15"
+#: Product-news, programming and French-policy sources, probed on this date.
+_VERIFIED_2026_11_18 = "2026-11-18"
 
 #: Boilerplate for the forty sources with no researched permission.
 _NO_PERMISSION = (
@@ -56,6 +58,7 @@ def _unknown(
     interval: int = 30,
     max_items: int = 0,
     notes: str = "",
+    verified_on: str = _VERIFIED,
 ) -> NewsSource:
     """A fetch-verified source with no researched reuse permission - the common case."""
     return NewsSource(
@@ -68,7 +71,7 @@ def _unknown(
         feed_url=feed_url,
         enabled=True,
         verification=VerificationState.FETCH_VERIFIED,
-        verified_on=_VERIFIED,
+        verified_on=verified_on,
         verified_item_count=items,
         license_type=LicenseType.UNKNOWN,
         attribution_required=True,
@@ -98,8 +101,8 @@ SOURCES: tuple[NewsSource, ...] = (
              "https://www.lemonde.fr/economie/rss_full.xml", 20, category=Category.ECONOMY),
     _unknown("lemonde-sciences", "Le Monde", "lemonde.fr", "FR", "fr",
              "https://www.lemonde.fr/sciences/rss_full.xml", 20, category=Category.SCIENCE),
-    _unknown("lemonde-sport", "Le Monde", "lemonde.fr", "FR", "fr",
-             "https://www.lemonde.fr/sport/rss_full.xml", 20, category=Category.SPORTS),
+    # lemonde-sport (https://www.lemonde.fr/sport/rss_full.xml) was removed on 2026-11-18:
+    # sport is in EXCLUDED_CATEGORIES, so everything it supplied was discarded on arrival.
     _unknown("franceinfo-titres", "franceinfo", "francetvinfo.fr", "FR", "fr",
              "https://www.francetvinfo.fr/titres.rss", 32, category=Category.FRANCE,
              interval=20),
@@ -121,6 +124,20 @@ SOURCES: tuple[NewsSource, ...] = (
     _unknown("sciencepost", "Sciencepost", "sciencepost.fr", "FR", "fr",
              "https://sciencepost.fr/feed/", 400, category=Category.SCIENCE, interval=120,
              notes="Returns 400 entries and 1.2 MB per fetch; polled every two hours."),
+
+    # ------------------------------------------------------------- France: rules and policy
+    # For the FRANCE_POLICY tag. The official sources were tried first and none can be read:
+    # see REJECTED_CANDIDATES for service-public, vie-publique, info.gouv.fr and the
+    # Interior Ministry. These desks report rule changes for households - tax, pensions,
+    # savings, residence - and the classifier tags the policy items among them.
+    _unknown("lemonde-argent", "Le Monde", "lemonde.fr", "FR", "fr",
+             "https://www.lemonde.fr/argent/rss_full.xml", 20, category=Category.ECONOMY,
+             interval=120, verified_on=_VERIFIED_2026_11_18,
+             notes="Household money: tax, pensions, savings, and what changes when."),
+    _unknown("lemonde-immigration", "Le Monde", "lemonde.fr", "FR", "fr",
+             "https://www.lemonde.fr/immigration-et-diversite/rss_full.xml", 20,
+             interval=180, verified_on=_VERIFIED_2026_11_18,
+             notes="Low volume (1 item in 48 hours when probed); covers visa and residence rules."),
 
     # ------------------------------------------------------------------ China desk
     # Four angles on the same subject deliberately: a Chinese-language service, a
@@ -203,6 +220,33 @@ SOURCES: tuple[NewsSource, ...] = (
         fetch_interval_minutes=60,
     ),
 
+    # ------------------------------------------------- Technology: product and platform news
+    # Added 2026-11-18 because a Google Maps update reached no feed above. First-party
+    # announcement blogs, plus 9to5Google, which reports Google product changes as they roll
+    # out. Each was sampled for its last 48 hours before being added.
+    _unknown("google-keyword", "Google", "blog.google", "US", "en",
+             "https://blog.google/rss/", 20, category=Category.TECHNOLOGY, interval=60,
+             verified_on=_VERIFIED_2026_11_18,
+             notes="Google's official blog, every product. 20 entries in 48 hours when probed."),
+    _unknown("google-maps-blog", "Google", "blog.google", "US", "en",
+             "https://blog.google/products/maps/rss/", 20, category=Category.TECHNOLOGY,
+             interval=180, verified_on=_VERIFIED_2026_11_18,
+             notes=(
+                 "The Maps section of the same blog. The main feed holds only 20 entries, "
+                 "so a Maps post can scroll off it between polls; this one keeps it."
+             )),
+    _unknown("9to5google", "9to5Google", "9to5google.com", "US", "en",
+             "https://9to5google.com/feed/", 100, category=Category.TECHNOLOGY, interval=60,
+             max_items=30, verified_on=_VERIFIED_2026_11_18,
+             notes="169 kB, 45 entries in 48 hours. Google product updates as they roll out."),
+    _unknown("microsoft-blog", "Microsoft", "blogs.microsoft.com", "US", "en",
+             "https://blogs.microsoft.com/feed/", 10, category=Category.TECHNOLOGY,
+             interval=360, verified_on=_VERIFIED_2026_11_18),
+    _unknown("zdnet-fr", "ZDNET France", "zdnet.fr", "FR", "fr",
+             "https://www.zdnet.fr/feeds/rss/actualites/", 50, category=Category.TECHNOLOGY,
+             interval=60, max_items=30, verified_on=_VERIFIED_2026_11_18,
+             notes="French-language IT and AI news. 37 entries in 48 hours when probed."),
+
     # ------------------------------------------------------------- Technology: AI research
     # First-party and close-to-the-work sources. The technology desk is global by design:
     # the frontier of this subject is in American and Chinese labs, so a section built from
@@ -222,6 +266,19 @@ SOURCES: tuple[NewsSource, ...] = (
              "https://simonwillison.net/atom/everything/", 30,
              category=Category.ARTIFICIAL_INTELLIGENCE, interval=180,
              notes="One engineer writing about LLMs in practice. High signal, low volume."),
+    _unknown("the-decoder", "The Decoder", "the-decoder.com", "DE", "en",
+             "https://the-decoder.com/feed/", 10, category=Category.ARTIFICIAL_INTELLIGENCE,
+             interval=120, verified_on=_VERIFIED_2026_11_18,
+             notes="AI news only. 10 entries in 48 hours when probed."),
+    _unknown("techcrunch-ai", "TechCrunch", "techcrunch.com", "US", "en",
+             "https://techcrunch.com/category/artificial-intelligence/feed/", 20,
+             category=Category.ARTIFICIAL_INTELLIGENCE, interval=60,
+             verified_on=_VERIFIED_2026_11_18,
+             notes="Overlaps the main TechCrunch feed; deduplication keeps one copy."),
+    _unknown("theverge-ai", "The Verge", "theverge.com", "US", "en",
+             "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml", 10,
+             category=Category.ARTIFICIAL_INTELLIGENCE, interval=60,
+             verified_on=_VERIFIED_2026_11_18),
     _unknown("ieee-spectrum-ai", "IEEE Spectrum", "spectrum.ieee.org", "US", "en",
              "https://spectrum.ieee.org/feeds/topic/artificial-intelligence.rss", 30,
              category=Category.ARTIFICIAL_INTELLIGENCE, interval=360, max_items=15),
@@ -238,6 +295,18 @@ SOURCES: tuple[NewsSource, ...] = (
              interval=360, notes="Linux kernel and systems engineering, in depth."),
     _unknown("github-blog", "The GitHub Blog", "github.blog", "US", "en",
              "https://github.blog/feed/", 10, category=Category.TECHNOLOGY, interval=360),
+    _unknown("github-changelog", "GitHub Changelog", "github.blog", "US", "en",
+             "https://github.blog/changelog/feed/", 10, category=Category.TECHNOLOGY,
+             interval=180, verified_on=_VERIFIED_2026_11_18,
+             notes="New models and features in Copilot, Actions and the platform."),
+    _unknown("google-developers", "Google Developers", "developers.googleblog.com", "US",
+             "en", "https://developers.googleblog.com/feeds/posts/default", 20,
+             category=Category.TECHNOLOGY, interval=360, verified_on=_VERIFIED_2026_11_18,
+             notes="Low volume (none in the 48 hours before probing); API and SDK releases."),
+    _unknown("thenewstack", "The New Stack", "thenewstack.io", "US", "en",
+             "https://thenewstack.io/feed/", 26, category=Category.TECHNOLOGY, interval=120,
+             verified_on=_VERIFIED_2026_11_18,
+             notes="348 kB per fetch. Software engineering, cloud and AI coding tools."),
     _unknown("wired", "WIRED", "wired.com", "US", "en",
              "https://www.wired.com/feed/rss", 50, category=Category.TECHNOLOGY,
              interval=120, max_items=25),
@@ -536,6 +605,32 @@ REJECTED_CANDIDATES: dict[str, str] = {
         "HTTP 429 on 2026-11-15. VentureBeat rate-limits this client; not worked around.",
     "http://export.arxiv.org/rss/cs.AI":
         "HTTP 200 but 0 parsable entries on 2026-11-15; arXiv's RSS needs a different path.",
+    # Probed 2026-11-18 for the French policy section and the technology desk.
+    "https://www.service-public.gouv.fr/particuliers/actualites/rss":
+        "HTTP 404 on 2026-11-18, as were the /abonnements/rss/ paths. service-public.gouv.fr "
+        "offers an email newsletter and no feed that could be found.",
+    "https://www.vie-publique.fr/rss":
+        "HTTP 200 with a 225-byte JavaScript redirect on 2026-11-18, on every path tried. "
+        "A bot challenge that needs JS and cookies; not worked around.",
+    "https://www.info.gouv.fr/rss": "HTTP 403 on 2026-11-18 (also via gouvernement.fr).",
+    "https://www.immigration.interieur.gouv.fr/rss": "HTTP 403 on 2026-11-18.",
+    "https://france-visas.gouv.fr/rss": "HTTP 403 on 2026-11-18.",
+    "https://www.legifrance.gouv.fr/rss": "HTTP 403 on 2026-11-18.",
+    "https://www.economie.gouv.fr/rss":
+        "HTTP 200, 60 kB, but 0 parsable entries on 2026-11-18 (feedparser bozo).",
+    "https://services.lesechos.fr/rss/les-echos-economie.xml":
+        "HTTP 403 on 2026-11-18, as were Les Echos' politics and France feeds.",
+    "https://www.anthropic.com/rss.xml": "HTTP 404 on 2026-11-18. No first-party feed found.",
+    "https://ai.meta.com/blog/rss/": "HTTP 404 on 2026-11-18.",
+    "https://www.frandroid.com/feed":
+        "HTTP 200, 15 entries on 2026-11-18. Left out: the 48-hour sample was mostly "
+        "Black Friday deals.",
+    "https://www.01net.com/actualites/feed/":
+        "HTTP 200, 30 entries on 2026-11-18. Consumer technology and games rather than AI "
+        "and programming.",
+    "https://9to5mac.com/feed/":
+        "HTTP 200, 100 entries on 2026-11-18, 65 in 48 hours. Left out on volume and mix "
+        "(concert announcements, accessories); the Apple Newsroom feed was weaker still.",
     "https://feedx.net/rss/zaobao.xml":
         "HTTP 200, 20 entries on 2026-11-14. Rejected on provenance, not reachability: a "
         "third-party mirror "

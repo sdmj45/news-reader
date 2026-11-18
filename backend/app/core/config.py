@@ -86,6 +86,12 @@ class Settings(BaseSettings):
     #: on a fixed date.
     retention_days: int = 2
 
+    #: Sections this reader does not want, comma-separated category names. Articles whose
+    #: primary category is one of these are dropped at collection, so they are never stored,
+    #: translated or shown. Matched on the primary category only: a technology desk's story
+    #: that mentions a football club is still a technology story.
+    excluded_categories: str = "SPORTS,CULTURE,ENVIRONMENT"
+
     #: Hard character ceiling per run, enforced before each call. **This is the setting that
     #: matters**, because the provider's limit is in characters, not articles.
     #:
@@ -145,6 +151,12 @@ class Settings(BaseSettings):
     @property
     def target_languages(self) -> tuple[str, ...]:
         return tuple(s.strip().lower() for s in self.translate_into.split(",") if s.strip())
+
+    @property
+    def excluded_category_names(self) -> frozenset[str]:
+        return frozenset(
+            s.strip().upper() for s in self.excluded_categories.split(",") if s.strip()
+        )
 
     def retention_cutoff(self, now: datetime | None = None) -> datetime | None:
         """The oldest publication time still kept, or None when retention is off."""

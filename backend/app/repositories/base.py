@@ -112,6 +112,10 @@ class ArticleRepository(Protocol):
 
     def count_translated(self, target_language: str) -> int: ...
 
+    def delete_in_categories(self, categories: frozenset[str]) -> int:
+        """Deletes articles whose primary category is one of ``categories``."""
+        ...
+
     def delete_published_before(self, cutoff: datetime) -> int:
         """Deletes articles published before ``cutoff``, and collection runs started before
         it. Returns the number of articles deleted."""

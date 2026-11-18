@@ -330,6 +330,13 @@ class SQLiteArticleRepository:
         translation pass runs on a small budget, so reading them all to discard most would
         be the most expensive part of a cheap operation.
 
+        **Ordered round-robin across publishers**: every publisher's newest untranslated
+        headline, then every publisher's second, and so on. Plain newest-first gave the whole
+        budget to whoever published most recently - the hourly general-news feeds - and on
+        2026-11-18 the technology section had 5 of 175 headlines translated while the
+        front page had 26 of 64. The round-robin mirrors the snapshot's per-publisher cap,
+        so the budget follows what the site actually shows.
+
         Articles already in ``target_language`` are excluded here, not skipped by the runner:
         skipping them there meant each one held a place in the queue on every run, forever.
         Articles whose last attempt failed come after every untried one for the same reason.
@@ -345,16 +352,31 @@ class SQLiteArticleRepository:
             params.append(_iso(published_after))
         params += [ProcessingStatus.TRANSLATION_FAILED.value, limit]
         rows = self._conn.execute(
-            f"""SELECT * FROM articles
-               WHERE summary_reuse_allowed = 1
-                 AND duplicate_of IS NULL
-                 AND json_extract(translated_title, ?) IS NULL
-                 AND language != ?{after_clause}
-               ORDER BY (processing_status = ?), published_at DESC
+            f"""SELECT * FROM (
+                   SELECT *, ROW_NUMBER() OVER (
+                       PARTITION BY publisher ORDER BY published_at DESC
+                   ) AS publisher_rank
+                   FROM articles
+                   WHERE summary_reuse_allowed = 1
+                     AND duplicate_of IS NULL
+                     AND json_extract(translated_title, ?) IS NULL
+                     AND language != ?{after_clause}
+               )
+               ORDER BY (processing_status = ?), publisher_rank, published_at DESC
                LIMIT ?""",
             params,
         ).fetchall()
         return [_article_of(r) for r in rows]
+
+    def delete_in_categories(self, categories: frozenset[str]) -> int:
+        if not categories:
+            return 0
+        names = sorted(categories)
+        deleted = self._conn.execute(
+            f"DELETE FROM articles WHERE category IN ({','.join('?' * len(names))})", names
+        ).rowcount
+        self._conn.commit()
+        return deleted
 
     def delete_published_before(self, cutoff: datetime) -> int:
         stamp = _iso(cutoff)

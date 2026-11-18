@@ -88,6 +88,9 @@ class IngestionReport:
     articles_too_old: int = 0
     #: Deleted from storage because they had aged out of the retention window.
     articles_pruned: int = 0
+    #: Classified into a section listed in EXCLUDED_CATEGORIES, so never written. Includes
+    #: any already stored, which are deleted on the same run.
+    articles_excluded: int = 0
     duplicate_rate: float = 0.0
     events_formed: int = 0
     multi_publisher_events: int = 0
@@ -245,6 +248,12 @@ async def run_ingestion(
         if article.processing_status is ProcessingStatus.COLLECTED:
             article.processing_status = ProcessingStatus.CLASSIFIED
 
+    excluded = settings.excluded_category_names
+    if excluded:
+        kept = [a for a in unique if not _is_excluded(a, sources_by_id[a.source_id], excluded)]
+        report.articles_excluded = len(unique) - len(kept)
+        unique = kept
+
     clusters = dedup.cluster_events(unique)
     report.events_formed = len(clusters)
     report.multi_publisher_events = sum(1 for c in clusters if c.is_multi_publisher)
@@ -255,6 +264,8 @@ async def run_ingestion(
     report.articles_unchanged = upsert.unchanged
     if cutoff is not None:
         report.articles_pruned = repository.delete_published_before(cutoff)
+    # Also catches articles stored before a section was excluded.
+    report.articles_excluded += repository.delete_in_categories(excluded)
 
     for article in unique:
         report.categories[article.category.value] = report.categories.get(article.category.value, 0) + 1
@@ -272,6 +283,28 @@ async def run_ingestion(
         report.duplicate_rate * 100, report.duration_seconds,
     )
     return report
+
+
+#: Desks whose own section is trusted over a keyword hit when excluding. On these, "YouTube
+#: Music" or "RL environments" are technology stories that happen to trip a culture or
+#: environment keyword.
+_TECHNOLOGY_DESKS = frozenset({Category.TECHNOLOGY.value, Category.ARTIFICIAL_INTELLIGENCE.value})
+
+
+def _is_excluded(article: Article, source: NewsSource, excluded: frozenset[str]) -> bool:
+    """Whether an article belongs to a section the reader excluded.
+
+    The primary category alone is not enough. A general feed files everything under its own
+    section - franceinfo's front page is FRANCE, BBC News is INTERNATIONAL - so a football
+    story arrives as FRANCE with SPORTS as a secondary tag. Measured on 2026-11-18, that is
+    where nearly all sport, culture and environment stories were: 0 excluded by primary
+    category, 34 carried as tags. So the headline's own subject counts too, except on
+    technology desks.
+    """
+    if source.default_category in _TECHNOLOGY_DESKS:
+        return False
+    tags = (article.category, *article.secondary_categories)
+    return any(c.value in excluded for c in tags)
 
 
 def _record(

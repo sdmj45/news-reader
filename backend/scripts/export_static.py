@@ -33,7 +33,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from app.core.config import get_settings
-from app.models.article import Article
+from app.models.article import Article, Category
 from app.repositories.base import ArticleQuery
 from app.repositories.factory import build_repository
 
@@ -166,12 +166,15 @@ def collect(
     """
     cutoff = datetime.now(UTC) - timedelta(days=max_age_days) if max_age_days > 0 else None
 
-    def newest(count: int, publisher: str | None = None) -> list[Article]:
+    def newest(
+        count: int, publisher: str | None = None, categories: tuple[Category, ...] = ()
+    ) -> list[Article]:
         out: list[Article] = []
         cursor: str | None = None
         while len(out) < count:
             page = repository.list_articles(
                 ArticleQuery(
+                    categories=categories,
                     languages=languages,
                     publishers=(publisher,) if publisher else (),
                     published_after=cutoff,
@@ -192,9 +195,22 @@ def collect(
     for publisher in repository.distinct_publishers():
         selected.extend(newest(max_per_publisher, publisher))
 
+    # French policy articles are outside the cap. They are few - a handful a day - and they
+    # come mostly from Le Monde's money and immigration desks, which share one cap with
+    # every other Le Monde section and lost to the front page every time. Then whatever is
+    # oldest and not policy makes room for them.
+    chosen = {a.id for a in selected}
+    policy = [a for a in newest(limit, categories=(Category.FRANCE_POLICY,))
+              if a.id not in chosen]
+    selected.extend(policy)
+
     selected.sort(key=lambda a: a.published_at, reverse=True)
     if len(selected) >= limit:
-        return selected[:limit]
+        keep = {a.id for a in policy}
+        room = limit - len(keep)
+        others = [a for a in selected if a.id not in keep][:max(room, 0)]
+        kept = {a.id for a in others} | keep
+        return [a for a in selected if a.id in kept][:limit]
 
     # Capping can leave the snapshot short when few publishers have posted recently.
     # Publishing a half-empty page because of an internal rule would be the wrong trade, so

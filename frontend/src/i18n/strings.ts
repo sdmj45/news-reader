@@ -16,11 +16,13 @@
  *
  * Sorting by article count — the obvious default — puts whichever feed was chattiest this
  * morning first, so the navigation reshuffles itself between visits and the sections a
- * reader actually opens drift to the right. This order is fixed: France, then technology
- * and AI, then China, then economy, then Europe. Anything not listed follows, by count.
+ * reader actually opens drift to the right. This order is fixed: France, then French
+ * policy (new rules: visas, tax, pensions, benefits), then technology and AI, then China,
+ * then economy, then Europe. Anything not listed follows, by count.
  */
 export const CATEGORY_ORDER: readonly string[] = [
   'FRANCE',
+  'FRANCE_POLICY',
   'TECHNOLOGY',
   'CHINA',
   'ECONOMY',
@@ -113,6 +115,7 @@ const fr: Strings = {
   all: 'Tout',
   categories: {
     FRANCE: 'France',
+    FRANCE_POLICY: 'Politiques publiques',
     CHINA: 'Chine',
     INTERNATIONAL: 'International',
     EUROPE: 'Europe',
@@ -177,6 +180,7 @@ const zh: Strings = {
   all: '全部',
   categories: {
     FRANCE: '法国',
+    FRANCE_POLICY: '法国政策',
     CHINA: '中国',
     INTERNATIONAL: '国际',
     EUROPE: '欧洲',
@@ -241,6 +245,7 @@ const en: Strings = {
   all: 'All',
   categories: {
     FRANCE: 'France',
+    FRANCE_POLICY: 'French policy',
     CHINA: 'China',
     INTERNATIONAL: 'International',
     EUROPE: 'Europe',

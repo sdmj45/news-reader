@@ -133,6 +133,37 @@ GEOGRAPHY: dict[Category, tuple[str, ...]] = {
 }
 
 
+#: New French rules and public policy: what changes for someone living in France. Matched
+#: only on France-related articles (see :func:`_is_french`), because "visa" or "pension" in
+#: a story about another country is not news about the rules this reader lives under.
+#:
+#: Deliberately specific. Generic words such as "prime" (Amazon Prime) or "loi" (in too many
+#: headlines to mean anything) are left out: a policy section padded with noise is one the
+#: reader stops opening.
+POLICY_TERMS: tuple[str, ...] = (
+    # Immigration, visas, residence
+    "visa", "visas", "titre de sejour", "titres de sejour", "carte de sejour",
+    "naturalisation", "prefecture", "regularisation", "loi immigration", "immigration",
+    "droit d asile", "demandeurs d asile", "ofii", "passeport talent",
+    # Law-making and rules taking effect
+    "decret", "arrete ministeriel", "projet de loi", "proposition de loi", "reforme",
+    "loi de finances", "plf", "plfss", "budget de la securite sociale", "ce qui change",
+    "ce qui a change", "entre en vigueur", "entrent en vigueur", "nouvelles regles",
+    "nouvelle regle", "au 1er janvier", "a partir du 1er", "journal officiel",
+    # Tax, pay, benefits
+    "impot", "impots", "impot sur le revenu", "prelevement a la source", "taxe", "fiscal",
+    "fiscalite", "niche fiscale", "smic", "retraite", "retraites", "age de depart",
+    "allocation", "allocations", "caf", "apl", "rsa", "prime d activite",
+    "assurance chomage", "france travail", "cotisations",
+    # Health cover, housing, energy bills
+    "securite sociale", "assurance maladie", "remboursement", "mutuelle", "carte vitale",
+    "medecin traitant", "loyer", "loyers", "encadrement des loyers", "logement social",
+    "dpe", "maprimerenov", "tarif reglemente", "cheque energie", "prix de l electricite",
+    # Everyday administration
+    "permis de conduire", "carte grise", "demarches", "service public",
+)
+
+
 def _compile(table: dict[Category, tuple[str, ...]]) -> dict[Category, re.Pattern[str]]:
     """One alternation per category. Word-boundary anchored for Latin, bare for CJK.
 
@@ -154,6 +185,24 @@ def _compile(table: dict[Category, tuple[str, ...]]) -> dict[Category, re.Patter
 
 _SUBJECT_PATTERNS = _compile(KEYWORDS)
 _GEOGRAPHY_PATTERNS = _compile(GEOGRAPHY)
+#: Whole words, unlike the subject stems above: "visa" must not match "visages".
+_POLICY_PATTERN = re.compile(
+    "|".join(rf"\b{re.escape(term)}\b" for term in POLICY_TERMS)
+)
+
+
+def is_policy_headline(text: str) -> bool:
+    """Whether a headline is about a public rule or policy, by :data:`POLICY_TERMS`."""
+    return bool(_POLICY_PATTERN.search(f" {normalise_title(text)} "))
+
+
+def _is_french(article: Article, geographies: list[Category]) -> bool:
+    """French news: from a French publisher, or naming France.
+
+    Known gap: a French publisher's story about another country's visas is tagged too. Telling
+    those apart needs more than a headline, and a few extra items beat a section that misses
+    the French rule changes it exists for."""
+    return article.country == "FR" or Category.FRANCE in geographies
 
 
 def classify_text(text: str) -> tuple[Category | None, list[Category]]:
@@ -228,6 +277,12 @@ def classify(article: Article, source_default: Category | None = None) -> Articl
         secondary = rest
     else:
         primary, secondary = Category.OTHER, []
+
+    # Policy is a tag across sections, put first so the three-tag cap never drops it.
+    if primary is not Category.FRANCE_POLICY and is_policy_headline(article.title) and (
+        _is_french(article, geographies)
+    ):
+        secondary.insert(0, Category.FRANCE_POLICY)
 
     article.category = primary
     # Deduplicate while preserving order; a headline can hit the same geography twice.

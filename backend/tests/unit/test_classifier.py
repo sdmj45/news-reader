@@ -158,3 +158,50 @@ class TestAiIsFiledUnderTechnology:
         classify(article)
         tags = [article.category, *article.secondary_categories]
         assert Category.TECHNOLOGY in tags and Category.CHINA in tags
+
+
+class TestFrancePolicyTag:
+    @pytest.mark.parametrize("headline", [
+        "Visa : ce qui change au 1er janvier pour les étudiants étrangers",
+        "Titre de séjour : la préfecture de Paris allonge les délais",
+        "Plans d’épargne-retraite : ce qui a changé en 2026",
+        "Le SMIC augmentera de 2 % au 1er janvier",
+        "Impôt sur le revenu : le barème revalorisé dans le projet de loi de finances",
+    ])
+    def test_rule_changes_in_french_news_are_tagged(self, headline):
+        article = make_article(headline, "https://a.fr/1")
+        article.country = "FR"
+        classify(article)
+        assert Category.FRANCE_POLICY in article.secondary_categories
+
+    def test_the_tag_comes_first_so_the_three_tag_cap_cannot_drop_it(self):
+        article = make_article("Visa : la Chine, l'Union européenne et la France", "https://a.fr/2")
+        article.country = "FR"
+        classify(article)
+        assert article.secondary_categories[0] is Category.FRANCE_POLICY
+
+    def test_a_foreign_story_is_not_french_policy(self):
+        article = make_article("US visa rules tightened for students", "https://a.us/1",
+                               language="en")
+        article.country = "US"
+        classify(article)
+        assert Category.FRANCE_POLICY not in article.secondary_categories
+
+    def test_a_foreign_publisher_writing_about_france_is(self):
+        article = make_article("France raises the minimum wage: SMIC up 2%", "https://a.uk/1",
+                               language="en")
+        article.country = "GB"
+        classify(article)
+        assert Category.FRANCE_POLICY in article.secondary_categories
+
+    @pytest.mark.parametrize("headline", [
+        "Amazon Prime : bonne nouvelle pour les abonnés",
+        "Nvidia écarte le retour de Jensen Huang",
+        # Whole words only: "visa" must not match "visages".
+        "Cet homme voit d’étranges visages chez les gens",
+    ])
+    def test_ordinary_french_news_is_not_tagged(self, headline):
+        article = make_article(headline, "https://a.fr/3")
+        article.country = "FR"
+        classify(article)
+        assert Category.FRANCE_POLICY not in article.secondary_categories

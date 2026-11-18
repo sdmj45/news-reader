@@ -55,6 +55,11 @@ class Category(str, Enum):
     """Specification section 9. ``OTHER`` is used when classification abstains."""
 
     FRANCE = "FRANCE"
+    FRANCE_POLICY = "FRANCE_POLICY"
+    """New French rules and public policy that change daily life: visas and residence
+    permits, tax, pensions, benefits, the minimum wage, housing, healthcare cover. A tag on
+    top of the subject rather than a subject: a story about a new tax is still economy news,
+    and the reader can find it from either section."""
     CHINA = "CHINA"
     """China, as a desk rather than a language: a Le Monde piece about Beijing belongs here
     as much as a BBC Chinese one. Separate from INTERNATIONAL because a reader who wants

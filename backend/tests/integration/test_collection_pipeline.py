@@ -18,6 +18,7 @@ import respx
 
 from app.collectors.collector_manager import CollectorManager, backoff_minutes
 from app.core.config import Settings
+from app.models.article import Category
 from app.models.licensing import LicenseType
 from app.models.source import SourceHealth, SourceType
 from app.repositories.base import ArticleQuery
@@ -523,3 +524,48 @@ class TestRetention:
     def test_zero_turns_retention_off(self):
         assert Settings(retention_days=0).retention_cutoff() is None
         assert Settings().retention_days == 2
+
+
+class TestExcludedSections:
+    @respx.mock
+    async def test_sport_is_dropped_and_the_rest_is_kept(self, repo):
+        now = datetime.now(UTC)
+        respx.get("https://a.test/feed.xml").mock(return_value=httpx.Response(
+            200, text=TestRetention.feed(
+                ("Ligue 1 : le PSG remporte le match au Parc", now - timedelta(hours=1)),
+                ("Le SMIC augmentera de 2 % au 1er janvier", now - timedelta(hours=2)),
+            )))
+        settings = Settings(sqlite_path=":memory:")
+        report = await ingest(repo, settings, [make_source(feed_url="https://a.test/feed.xml")])
+
+        assert report.articles_excluded == 1
+        assert [a.title for a in repo.list_articles(ArticleQuery()).articles] == [
+            "Le SMIC augmentera de 2 % au 1er janvier"
+        ]
+
+    def test_the_default_excludes_sport_culture_and_environment(self):
+        assert Settings().excluded_category_names == {"SPORTS", "CULTURE", "ENVIRONMENT"}
+
+    @respx.mock
+    async def test_a_general_feed_cannot_smuggle_sport_in_under_its_own_section(self, repo):
+        # franceinfo files everything as FRANCE; the football is only visible as a tag.
+        now = datetime.now(UTC)
+        respx.get("https://a.test/feed.xml").mock(return_value=httpx.Response(
+            200, text=TestRetention.feed(
+                ("Ligue 1 : le PSG remporte le match au Parc", now - timedelta(hours=1)),
+            )))
+        source = make_source(feed_url="https://a.test/feed.xml", category=Category.FRANCE)
+        report = await ingest(repo, Settings(sqlite_path=":memory:"), [source])
+        assert report.articles_excluded == 1 and repo.count_articles() == 0
+
+    @respx.mock
+    async def test_a_technology_desk_keeps_a_story_that_trips_a_culture_keyword(self, repo):
+        now = datetime.now(UTC)
+        respx.get("https://a.test/feed.xml").mock(return_value=httpx.Response(
+            200, text=TestRetention.feed(
+                ("YouTube Music removes the Samples tab from its music app",
+                 now - timedelta(hours=1)),
+            )))
+        source = make_source(feed_url="https://a.test/feed.xml", category=Category.TECHNOLOGY)
+        report = await ingest(repo, Settings(sqlite_path=":memory:"), [source])
+        assert report.articles_excluded == 0 and repo.count_articles() == 1

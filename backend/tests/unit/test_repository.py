@@ -297,3 +297,30 @@ class TestTranslationQueue:
                                 published_at=NOW - timedelta(hours=5))
         repo.upsert_articles([failed, untried])
         assert [a.title for a in repo.list_untranslated("zh")] == ["Pas essayée", "Échec"]
+
+    def test_every_publisher_gets_a_turn_before_any_gets_a_second(self, repo):
+        # Plain newest-first gave the whole budget to the hourly general-news feeds and
+        # left the slower technology sources untranslated.
+        hourly = [self.eligible(f"Flash {i}", f"https://news.fr/{i}", publisher="Hourly",
+                                published_at=NOW - timedelta(minutes=i)) for i in range(5)]
+        weekly = self.eligible("Long read", "https://tech.test/1", publisher="Weekly",
+                               published_at=NOW - timedelta(days=1))
+        repo.upsert_articles([*hourly, weekly])
+        assert [a.title for a in repo.list_untranslated("zh", limit=2)] == [
+            "Flash 0", "Long read"
+        ]
+
+
+class TestExcludedCategories:
+    def test_deletes_only_the_named_primary_categories(self, repo):
+        repo.upsert_articles([
+            make_article("Match", "https://a.fr/s", category=Category.SPORTS),
+            make_article("Film", "https://a.fr/c", category=Category.CULTURE),
+            make_article("Budget", "https://a.fr/e", category=Category.ECONOMY),
+        ])
+        assert repo.delete_in_categories(frozenset({"SPORTS", "CULTURE"})) == 2
+        assert [a.title for a in repo.list_articles(ArticleQuery()).articles] == ["Budget"]
+
+    def test_an_empty_set_deletes_nothing(self, repo):
+        repo.upsert_articles([make_article("Match", "https://a.fr/s", category=Category.SPORTS)])
+        assert repo.delete_in_categories(frozenset()) == 0

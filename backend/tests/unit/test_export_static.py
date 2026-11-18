@@ -163,3 +163,29 @@ class TestRetentionWindow:
         repo.upsert_articles([make_article("Ancienne", "https://a.test/old",
                                            published_at=NOW - timedelta(days=30))])
         assert len(collect(repo, limit=50, languages=(), max_age_days=0)) == 1
+
+
+class TestPolicyOutsideTheCap:
+    def test_a_policy_article_survives_a_crowded_publisher(self, repo):
+        # Le Monde's money desk shares one cap with every other Le Monde section.
+        crowd = [make_article(f"Une {i}", f"https://lemonde.test/{i}", publisher="Le Monde",
+                              published_at=NOW - timedelta(minutes=i)) for i in range(5)]
+        policy = make_article("Le SMIC augmentera au 1er janvier", "https://lemonde.test/smic",
+                              publisher="Le Monde", published_at=NOW - timedelta(hours=10))
+        policy.secondary_categories = [Category.FRANCE_POLICY]
+        repo.upsert_articles([*crowd, policy])
+
+        selected = collect(repo, limit=50, languages=(), max_per_publisher=3)
+        assert "Le SMIC augmentera au 1er janvier" in [a.title for a in selected]
+
+    def test_policy_articles_are_kept_when_the_limit_binds(self, repo):
+        recent = [make_article(f"Flash {i}", f"https://a.test/{i}", publisher=f"P{i}",
+                               published_at=NOW - timedelta(minutes=i)) for i in range(5)]
+        policy = make_article("Titre de séjour : nouvelles règles", "https://b.test/p",
+                              publisher="P0", published_at=NOW - timedelta(hours=20))
+        policy.secondary_categories = [Category.FRANCE_POLICY]
+        repo.upsert_articles([*recent, policy])
+
+        selected = collect(repo, limit=3, languages=(), max_per_publisher=1)
+        assert len(selected) == 3
+        assert "Titre de séjour : nouvelles règles" in [a.title for a in selected]
