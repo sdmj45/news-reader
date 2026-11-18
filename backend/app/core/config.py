@@ -90,7 +90,7 @@ class Settings(BaseSettings):
     #: primary category is one of these are dropped at collection, so they are never stored,
     #: translated or shown. Matched on the primary category only: a technology desk's story
     #: that mentions a football club is still a technology story.
-    excluded_categories: str = "SPORTS,CULTURE,ENVIRONMENT"
+    excluded_categories: str = "SPORTS,CULTURE,ENVIRONMENT,HEALTH"
 
     #: Hard character ceiling per run, enforced before each call. **This is the setting that
     #: matters**, because the provider's limit is in characters, not articles.
@@ -101,6 +101,14 @@ class Settings(BaseSettings):
     #: or ~6,000 with the address. The default is the conservative one; raise it in the
     #: deployment once TRANSLATE_CONTACT_EMAIL is set.
     translate_max_characters_per_run: int = 600
+
+    #: The provider's daily allowance in characters. When set (> 0), each run spends what is
+    #: left of today's allowance, keeping TRANSLATE_MAX_CHARACTERS_PER_RUN in reserve for
+    #: each run still to come today - so a backlog is cleared in one run instead of
+    #: trickling through at a fixed slice per run. 0 keeps the fixed per-run budget.
+    translate_daily_characters: int = 0
+    #: How many times a day the pipeline runs; used to size that reserve.
+    translate_runs_per_day: int = 8
 
     #: Whether to translate the publisher's description as well as the headline.
     #:

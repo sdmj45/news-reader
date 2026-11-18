@@ -16,13 +16,15 @@ import asyncio
 import json
 import logging
 import sys
+from datetime import UTC, datetime
 
 import httpx
 
 from app.core.config import get_settings
 from app.repositories.factory import build_repository
 from app.services.translation.factory import build_translator
-from app.services.translation.runner import run_translation
+from app.services.translation.runner import daily_budget, run_translation
+from scripts.export_static import DEFAULT_LIMIT, collect
 
 
 async def main() -> int:
@@ -33,6 +35,8 @@ async def main() -> int:
                         help="Character ceiling for this run. Overrides settings.")
     parser.add_argument("--descriptions", action="store_true",
                         help="Also translate descriptions. Costs ~4x the quota per article.")
+    parser.add_argument("--everything", action="store_true",
+                        help="Translate any stored article, not only those the site will show.")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
@@ -47,19 +51,38 @@ async def main() -> int:
     limit = args.limit if args.limit is not None else settings.translate_max_per_run
     repository = build_repository(settings)
 
+    now = datetime.now(UTC)
+    today = now.date().isoformat()
+    if args.max_characters is not None:
+        budget = args.max_characters
+    elif settings.translate_daily_characters > 0:
+        budget = daily_budget(
+            settings.translate_daily_characters,
+            repository.translation_usage(today),
+            settings.translate_max_characters_per_run,
+            settings.translate_runs_per_day,
+            now,
+        )
+    else:
+        budget = settings.translate_max_characters_per_run
+
+    # Exactly what the exporter will publish next, computed by the same function.
+    published = None if args.everything else frozenset(
+        a.id for a in collect(repository, DEFAULT_LIMIT, (), max_age_days=settings.retention_days)
+    )
+
     async with httpx.AsyncClient() as client:
         translator = build_translator(settings, client)
         report = await run_translation(
             repository, translator,
             target_languages=targets,
             max_per_run=limit,
-            max_characters=(
-                args.max_characters if args.max_characters is not None
-                else settings.translate_max_characters_per_run
-            ),
+            max_characters=budget,
             translate_descriptions=args.descriptions or settings.translate_descriptions,
             published_after=settings.retention_cutoff(),
+            only_ids=published,
         )
+    repository.add_translation_usage(today, report.characters_sent)
 
     if args.json:
         print(json.dumps(report.__dict__, indent=2, ensure_ascii=False))
@@ -69,9 +92,8 @@ async def main() -> int:
     print(f"considered        {report.articles_considered}")
     print(f"translated        {report.translated}")
     print(f"failed            {report.failed}  (success rate {report.success_rate:.0%})")
-    budget = (args.max_characters if args.max_characters is not None
-              else settings.translate_max_characters_per_run)
-    print(f"characters sent   {report.characters_sent} of {budget or 'unlimited'} allowed this run")
+    print(f"characters sent   {report.characters_sent} of {budget or 'unlimited'} allowed this run"
+          f" ({repository.translation_usage(today)} sent today)")
     print("skipped:")
     print(f"  licence         {report.articles_skipped_license}")
     print(f"  already done    {report.articles_skipped_already_done}")

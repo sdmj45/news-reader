@@ -58,11 +58,18 @@ jobs:
       PERSONAL_USE_MODE: "true"
       TRANSLATOR: mymemory
       TRANSLATE_INTO: zh
-      # A ceiling on articles, set above what the character budget below allows (~78
-      # headlines with the contact address) so that the budget is what binds. At 40 it was
-      # the other way round: each run stopped at 40 with half its characters unspent, and
-      # the site never caught up with the ~35 new articles a run brings.
-      TRANSLATE_MAX_PER_RUN: "100"
+      # A ceiling on articles, set above anything the character budget allows so that the
+      # budget is what binds. At 40 it was the other way round: each run stopped at 40 with
+      # half its characters unspent, and the site never caught up.
+      TRANSLATE_MAX_PER_RUN: "1000"
+
+      # The day's allowance, a little under MyMemory's ~50,000 (or ~5,000 without the
+      # contact address). Each run spends what is left of it, keeping the per-run figure
+      # below in reserve for every run still to come today: an ordinary run spends ~6,000,
+      # and a run facing a backlog spends enough to clear it. Usage is recorded in the
+      # cached database.
+      TRANSLATE_DAILY_CHARACTERS: ${{ vars.TRANSLATE_CONTACT_EMAIL && '48000' || '4800' }}
+      TRANSLATE_RUNS_PER_DAY: "8"
 
       # Days of news kept. Older articles are not collected, are deleted from the cached
       # database, are not translated and are not published. See RETENTION_DAYS in
@@ -74,7 +81,8 @@ jobs:
       # Set it under Settings → Secrets and variables → Actions → Variables.
       TRANSLATE_CONTACT_EMAIL: ${{ vars.TRANSLATE_CONTACT_EMAIL }}
 
-      # The budget that actually binds, because the provider counts characters, not
+      # The reserve per remaining run (see TRANSLATE_DAILY_CHARACTERS above), and the
+      # budget of an ordinary run. The provider counts characters, not
       # articles. Measured: an average headline is 77 characters. This workflow runs eight
       # times a day, so the day's allowance divided by eight is:
       #

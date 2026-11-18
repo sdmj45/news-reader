@@ -543,8 +543,10 @@ class TestExcludedSections:
             "Le SMIC augmentera de 2 % au 1er janvier"
         ]
 
-    def test_the_default_excludes_sport_culture_and_environment(self):
-        assert Settings().excluded_category_names == {"SPORTS", "CULTURE", "ENVIRONMENT"}
+    def test_the_default_excludes_sport_culture_environment_and_health(self):
+        assert Settings().excluded_category_names == {
+            "SPORTS", "CULTURE", "ENVIRONMENT", "HEALTH"
+        }
 
     @respx.mock
     async def test_a_general_feed_cannot_smuggle_sport_in_under_its_own_section(self, repo):
@@ -569,6 +571,9 @@ class TestExcludedSections:
         source = make_source(feed_url="https://a.test/feed.xml", category=Category.TECHNOLOGY)
         report = await ingest(repo, Settings(sqlite_path=":memory:"), [source])
         assert report.articles_excluded == 0 and repo.count_articles() == 1
+        # Kept, but without the tag: a Culture chip for one tech story is a Culture section.
+        stored = repo.list_articles(ArticleQuery()).articles[0]
+        assert Category.CULTURE not in stored.secondary_categories
 
 
 class TestRetagStored:
@@ -609,7 +614,7 @@ class TestRetagStored:
     async def test_articles_from_sources_outside_the_run_are_left_alone(self, repo):
         orphan = self.stored("Ligue 1 : le PSG remporte le match", "https://b.test/psg",
                              Category.FRANCE)
-        orphan.source_id = "not-in-this-run"
+        orphan.source_id = "lemonde-une"  # active in the registry, just not in this run
         repo.upsert_articles([orphan])
         respx.get("https://a.test/feed.xml").mock(
             return_value=httpx.Response(200, text=TestRetention.feed())
@@ -619,3 +624,19 @@ class TestRetagStored:
                      [make_source(feed_url="https://a.test/feed.xml")])
 
         assert repo.get_article(orphan.id) is not None
+
+    @respx.mock
+    async def test_articles_from_a_disabled_source_are_deleted(self, repo):
+        leftover = self.stored("Pourquoi les abeilles dansent", "https://tc.test/bees",
+                               Category.SCIENCE)
+        leftover.source_id = "theconversation-fr"  # disabled: CC BY-ND forbids translation
+        repo.upsert_articles([leftover])
+        respx.get("https://a.test/feed.xml").mock(
+            return_value=httpx.Response(200, text=TestRetention.feed())
+        )
+
+        report = await ingest(repo, Settings(sqlite_path=":memory:"),
+                              [make_source(feed_url="https://a.test/feed.xml")])
+
+        assert repo.get_article(leftover.id) is None
+        assert report.articles_excluded == 1

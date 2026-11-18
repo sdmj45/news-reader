@@ -100,6 +100,13 @@ CREATE TABLE IF NOT EXISTS collection_runs (
     report     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_runs_started ON collection_runs(started_at DESC);
+
+-- Characters sent to the translation provider per UTC day, so each run can spend what is
+-- left of the day's allowance rather than a fixed slice of it.
+CREATE TABLE IF NOT EXISTS translation_usage (
+    day        TEXT PRIMARY KEY,
+    characters INTEGER NOT NULL DEFAULT 0
+);
 """
 
 
@@ -488,6 +495,24 @@ class SQLiteArticleRepository:
             (run["run_id"], run["started_at"], json.dumps(run, ensure_ascii=False, default=str)),
         )
         self._conn.commit()
+
+    def add_translation_usage(self, day: str, characters: int) -> None:
+        self._conn.execute(
+            "INSERT INTO translation_usage (day, characters) VALUES (?, ?) "
+            "ON CONFLICT(day) DO UPDATE SET characters = characters + excluded.characters",
+            (day, characters),
+        )
+        # Old days are of no use to the budget; keep a week for reading back.
+        self._conn.execute(
+            "DELETE FROM translation_usage WHERE day < date(?, '-7 days')", (day,)
+        )
+        self._conn.commit()
+
+    def translation_usage(self, day: str) -> int:
+        row = self._conn.execute(
+            "SELECT characters FROM translation_usage WHERE day = ?", (day,)
+        ).fetchone()
+        return row["characters"] if row else 0
 
     def list_collection_runs(self, limit: int = 20) -> list[dict]:
         rows = self._conn.execute(

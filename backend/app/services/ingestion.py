@@ -258,6 +258,8 @@ async def run_ingestion(
         kept = [a for a in unique if not _is_excluded(a, sources_by_id[a.source_id], excluded)]
         report.articles_excluded = len(unique) - len(kept)
         unique = kept
+        for article in unique:
+            _strip_excluded_tags(article, excluded)
 
     clusters = dedup.cluster_events(unique)
     report.events_formed = len(clusters)
@@ -313,6 +315,19 @@ def _is_excluded(article: Article, source: NewsSource, excluded: frozenset[str])
     return any(c.value in excluded for c in tags)
 
 
+def _strip_excluded_tags(article: Article, excluded: frozenset[str]) -> None:
+    """Removes excluded sections from a kept article's secondary tags.
+
+    A technology desk's "YouTube Music" story is kept, but its CULTURE tag would still put a
+    Culture chip in the navigation for one article - which is how an excluded section stayed
+    visible on the live site on 2026-11-18.
+    """
+    if excluded:
+        article.secondary_categories = [
+            c for c in article.secondary_categories if c.value not in excluded
+        ]
+
+
 def _retag_stored(
     repository: ArticleRepository,
     sources_by_id: dict[str, NewsSource],
@@ -327,13 +342,17 @@ def _retag_stored(
     store is bounded by the retention window - about a thousand rows - and classification
     is keyword matching, so doing it every run costs well under a second.
 
-    Articles from a source not in this run (``COLLECTOR_ONLY_SOURCES``) are left alone:
-    without the source there is no section default to classify against.
+    Articles from a source that is no longer active in the registry are deleted: the source
+    was disabled on purpose (The Conversation, whose licence forbids the translation this
+    reader needs), and leaving its articles up for two more days undoes that. Articles from
+    an active source that is merely outside this run (``COLLECTOR_ONLY_SOURCES``) are left
+    alone: without the source there is no section default to classify against.
 
-    Returns ``(retagged, deleted)``.
+    Returns ``(retagged, deleted)``; deleted counts both kinds.
     """
     changed: list[Article] = []
     doomed: list[str] = []
+    active = {s.source_id for s in source_registry.active_sources()}
     cursor: str | None = None
     while True:
         page = repository.list_articles(
@@ -342,13 +361,17 @@ def _retag_stored(
         for article in page.articles:
             source = sources_by_id.get(article.source_id)
             if source is None:
+                if article.source_id not in active:
+                    doomed.append(article.id)
                 continue
             before = (article.category, list(article.secondary_categories))
             default = Category(source.default_category) if source.default_category else None
             classifier.classify(article, default)
             if excluded and _is_excluded(article, source, excluded):
                 doomed.append(article.id)
-            elif (article.category, article.secondary_categories) != before:
+                continue
+            _strip_excluded_tags(article, excluded)
+            if (article.category, article.secondary_categories) != before:
                 changed.append(article)
         cursor = page.next_cursor
         if not cursor:

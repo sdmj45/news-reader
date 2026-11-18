@@ -405,7 +405,11 @@ SOURCES: tuple[NewsSource, ...] = (
         language="fr",
         source_type=SourceType.ATOM,
         feed_url="https://theconversation.com/fr/articles.atom",
-        enabled=True,
+        # Disabled 2026-11-18. This reader needs every headline in Chinese, and CC BY-ND
+        # forbids translation, so every article from here stayed untranslated (29 of the
+        # 344 untranslated on the live site that day). The licence record is kept, so
+        # re-enabling it is one line if a household that reads French or English wants it.
+        enabled=False,
         verification=VerificationState.FETCH_VERIFIED,
         verified_on=_VERIFIED,
         verified_item_count=50,
@@ -441,7 +445,11 @@ SOURCES: tuple[NewsSource, ...] = (
         language="en",
         source_type=SourceType.ATOM,
         feed_url="https://theconversation.com/articles.atom",
-        enabled=True,
+        # Disabled 2026-11-18. This reader needs every headline in Chinese, and CC BY-ND
+        # forbids translation, so every article from here stayed untranslated (29 of the
+        # 344 untranslated on the live site that day). The licence record is kept, so
+        # re-enabling it is one line if a household that reads French or English wants it.
+        enabled=False,
         verification=VerificationState.FETCH_VERIFIED,
         verified_on=_VERIFIED,
         verified_item_count=50,

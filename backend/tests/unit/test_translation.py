@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import httpx
 import pytest
 import respx
@@ -18,7 +20,7 @@ from app.services.translation.base import (
 from app.services.translation.factory import build_translator
 from app.services.translation.mymemory import ENDPOINT, MyMemoryTranslator
 from app.services.translation.null_translator import NullTranslator
-from app.services.translation.runner import run_translation
+from app.services.translation.runner import daily_budget, run_translation
 from tests.conftest import make_article
 
 
@@ -305,3 +307,55 @@ class TestCharacterBudget:
 
         assert Settings().translate_max_characters_per_run <= 625
         assert Settings().translate_descriptions is False
+
+
+class TestDailyBudget:
+    MORNING = datetime(2026, 11, 18, 9, 50, tzinfo=UTC)
+
+    def test_a_backlog_gets_what_later_runs_do_not_need(self):
+        # 4 runs still to come at 09:50 (12, 15, 18, 21h); each keeps 6,000 in reserve.
+        assert daily_budget(48_000, 0, 6_000, 8, self.MORNING) == 24_000
+
+    def test_an_ordinary_day_spends_one_run_s_worth(self):
+        first_run = datetime(2026, 11, 18, 0, 41, tzinfo=UTC)
+        assert daily_budget(48_000, 0, 6_000, 8, first_run) == 6_000
+
+    def test_what_was_spent_today_is_not_spent_again(self):
+        assert daily_budget(48_000, 20_000, 6_000, 8, self.MORNING) == 6_000
+
+    def test_the_last_run_of_the_day_takes_whatever_is_left(self):
+        last = datetime(2026, 11, 18, 21, 17, tzinfo=UTC)
+        assert daily_budget(48_000, 30_000, 6_000, 8, last) == 18_000
+
+    def test_nothing_left_means_nothing_spent(self):
+        assert daily_budget(48_000, 48_000, 6_000, 8, self.MORNING) == 0
+
+
+class TestOnlyPublishedArticles:
+    @respx.mock
+    async def test_articles_the_site_will_not_show_are_not_translated(self, client, seeded):
+        respx.get(ENDPOINT).mock(return_value=httpx.Response(200, json=ok_body("法国新闻")))
+        shown = seeded.list_untranslated("zh", limit=1)[0]
+        report = await run_translation(
+            seeded, MyMemoryTranslator(client), target_languages=("zh",), max_per_run=10,
+            only_ids=frozenset({shown.id}),
+        )
+        assert report.translated == 1
+        assert seeded.get_article(shown.id).translated_title["zh"] == "法国新闻"
+
+
+class TestUsageLog:
+    def test_usage_accumulates_per_day(self):
+        repository = SQLiteArticleRepository(":memory:")
+        repository.add_translation_usage("2026-11-18", 1_000)
+        repository.add_translation_usage("2026-11-18", 500)
+        repository.add_translation_usage("2026-11-19", 7)
+        assert repository.translation_usage("2026-11-18") == 1_500
+        assert repository.translation_usage("2026-11-19") == 7
+        assert repository.translation_usage("2026-11-20") == 0
+
+    def test_old_days_are_dropped(self):
+        repository = SQLiteArticleRepository(":memory:")
+        repository.add_translation_usage("2026-11-01", 100)
+        repository.add_translation_usage("2026-11-18", 1)
+        assert repository.translation_usage("2026-11-01") == 0

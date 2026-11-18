@@ -17,16 +17,16 @@ Chinese, read them in a browser. Nothing is deployed anywhere — read
 | **Reading interface** | React + Vite + Tailwind. French headline with the Chinese underneath, categories, search, saved articles, light/dark, PWA |
 | **Chinese translation** | MyMemory, free and key-less. Measured good on real headlines; 100% success over a live pass |
 | **REST API** | FastAPI, read-only, cursor-paginated, CORS-restricted, rate-limited |
-| RSS/Atom collection | 64 active sources — French, English, Chinese — each fetch-verified before being added |
+| RSS/Atom collection | 62 active sources — French, English, Chinese — each fetch-verified before being added |
 | GDELT GAL collection | JSON-NL, schema **measured** from live data, ~1,800 articles per file |
 | Normalisation | URL canonicalisation, title cleaning, 40+ date formats, language tags |
 | Deduplication | Canonical-URL collapse; measured duplicate rate 0.9–6% per run |
 | Event clustering | Cross-publisher, multilingual (word tokens and CJK bigrams), links without merging |
-| Classification | 18 categories including a China desk and a French-policy tag (visas, tax, pensions, benefits); source section → keyword count → abstain. Sport, culture and environment are excluded (`EXCLUDED_CATEGORIES`). No AI, no cost. |
-| Licence enforcement | Conservative by default, checked twice, 61 of 64 active sources metadata-only |
+| Classification | 18 categories including a China desk and a French-policy tag (visas, tax, pensions, benefits); source section → keyword count → abstain. Sport, culture, environment and health are excluded (`EXCLUDED_CATEGORIES`). No AI, no cost. |
+| Licence enforcement | Conservative by default, checked twice, 61 of 62 active sources metadata-only; The Conversation is disabled because CC BY-ND forbids translation |
 | Persistence | SQLite with cursor pagination and the indexes Firestore will need; keeps the last `RETENTION_DAYS` (2) days and deletes the rest |
 | Per-source health | Isolation, exponential backoff, ETag/cursor incremental collection |
-| Automated tests | **326 backend** (unit + integration + API), **23 browser end-to-end**, plus 45 live-data tests on demand |
+| Automated tests | **335 backend** (unit + integration + API), **23 browser end-to-end**, plus 45 live-data tests on demand |
 
 ## What does not work
 

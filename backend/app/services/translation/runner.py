@@ -117,6 +117,30 @@ async def translate_article(
     return True
 
 
+def daily_budget(
+    daily_characters: int,
+    used_today: int,
+    reserve_per_run: int,
+    runs_per_day: int,
+    now: datetime,
+) -> int:
+    """Characters this run may spend: today's remainder, less a reserve for later runs.
+
+    Measured on 2026-11-18: with a fixed 6,000 characters a run, the site needed about a
+    day to catch up on a backlog of 300 headlines while most of the day's allowance went
+    unspent. Spending the remainder clears it in one run; the reserve - one ordinary run's
+    worth for every run still to come today - keeps the evening's news translatable.
+
+    Never less than one ordinary run's worth while anything remains, so the last runs of
+    the day are not starved by rounding.
+    """
+    remaining = max(0, daily_characters - used_today)
+    hours_left = 24 - (now.hour + now.minute / 60)
+    runs_left_after_this = int(hours_left / (24 / max(1, runs_per_day)))
+    spendable = remaining - reserve_per_run * runs_left_after_this
+    return max(min(reserve_per_run, remaining), spendable)
+
+
 async def run_translation(
     repository: ArticleRepository,
     translator: Translator,
@@ -126,11 +150,17 @@ async def run_translation(
     max_characters: int = 0,
     translate_descriptions: bool = False,
     published_after: datetime | None = None,
+    only_ids: frozenset[str] | None = None,
 ) -> TranslationReport:
     """One translation pass over the newest articles that still need one.
 
     ``published_after`` is the retention cut-off. Budget spent on an article that has aged
     off the site is budget not spent on one a reader will see.
+
+    ``only_ids`` restricts the pass to these articles - in production, the ones the next
+    snapshot will publish. The store holds about twice what the site shows (the snapshot
+    caps each publisher), and without this half of every run's budget went on headlines
+    nobody would see.
     """
     report = TranslationReport(provider=translator.name)
     if max_per_run <= 0 or translator.name == "null":
@@ -142,9 +172,19 @@ async def run_translation(
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_TRANSLATIONS)
 
     for target in target_languages:
-        pending = repository.list_untranslated(
-            target, limit=max_per_run, published_after=published_after
-        )
+        if only_ids is None:
+            pending = repository.list_untranslated(
+                target, limit=max_per_run, published_after=published_after
+            )
+        else:
+            # The queue's own order (policy first, then round-robin) is kept; the filter
+            # only removes what will not be published. The window holds ~1,000 rows.
+            pending = [
+                a for a in repository.list_untranslated(
+                    target, limit=10_000, published_after=published_after
+                )
+                if a.id in only_ids
+            ][:max_per_run]
         report.articles_considered += len(pending)
         if not pending:
             continue
