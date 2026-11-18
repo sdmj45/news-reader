@@ -13,6 +13,9 @@ The stage order is not arbitrary:
    and a crashed run can simply be run again.
 6. **Record health**, per source, including the failures - which is what makes the backoff in
    the manager work on the next run.
+7. **Prune** articles older than ``RETENTION_DAYS``. Articles that old are also dropped at
+   step 2, before they are written: feeds keep listing week-old items, and an article deleted
+   but not filtered would come back as "new" on the next run and be translated again.
 
 Two guarantees this module is responsible for:
 
@@ -81,6 +84,10 @@ class IngestionReport:
     articles_inserted: int = 0
     articles_updated: int = 0
     articles_unchanged: int = 0
+    #: Collected but older than the retention window, so never written.
+    articles_too_old: int = 0
+    #: Deleted from storage because they had aged out of the retention window.
+    articles_pruned: int = 0
     duplicate_rate: float = 0.0
     events_formed: int = 0
     multi_publisher_events: int = 0
@@ -221,6 +228,12 @@ async def run_ingestion(
 
     report.articles_collected = len(collected)
 
+    cutoff = settings.retention_cutoff()
+    if cutoff is not None:
+        recent = [a for a in collected if a.published_at >= cutoff]
+        report.articles_too_old = len(collected) - len(recent)
+        collected = recent
+
     unique, dedup_report = dedup.deduplicate(collected)
     report.articles_after_dedup = len(unique)
     report.duplicate_rate = round(dedup_report.duplicate_rate, 4)
@@ -240,6 +253,8 @@ async def run_ingestion(
     report.articles_inserted = upsert.inserted
     report.articles_updated = upsert.updated
     report.articles_unchanged = upsert.unchanged
+    if cutoff is not None:
+        report.articles_pruned = repository.delete_published_before(cutoff)
 
     for article in unique:
         report.categories[article.category.value] = report.categories.get(article.category.value, 0) + 1

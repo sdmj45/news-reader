@@ -36,6 +36,8 @@ def _format(report) -> str:
         f"  (duplicate rate {report.duplicate_rate:.1%})",
         f"  written          {report.articles_inserted} new, "
         f"{report.articles_updated} updated, {report.articles_unchanged} unchanged",
+        f"  retention        {report.articles_too_old} too old to keep, "
+        f"{report.articles_pruned} aged out and deleted",
         f"  events           {report.events_formed} "
         f"({report.multi_publisher_events} across publishers)",
         f"  descriptions     {report.descriptions_withheld_by_license} withheld by licence",

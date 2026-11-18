@@ -58,7 +58,16 @@ jobs:
       PERSONAL_USE_MODE: "true"
       TRANSLATOR: mymemory
       TRANSLATE_INTO: zh
-      TRANSLATE_MAX_PER_RUN: "40"
+      # A ceiling on articles, set above what the character budget below allows (~78
+      # headlines with the contact address) so that the budget is what binds. At 40 it was
+      # the other way round: each run stopped at 40 with half its characters unspent, and
+      # the site never caught up with the ~35 new articles a run brings.
+      TRANSLATE_MAX_PER_RUN: "100"
+
+      # Days of news kept. Older articles are not collected, are deleted from the cached
+      # database, are not translated and are not published. See RETENTION_DAYS in
+      # backend/app/core/config.py.
+      RETENTION_DAYS: "2"
 
       # Not a credential: MyMemory documents this as a contact address that raises the free
       # quota from ~5,000 to ~50,000 characters a day. No registration, no verification.

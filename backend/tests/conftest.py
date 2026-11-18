@@ -41,6 +41,8 @@ def settings() -> Settings:
         collector_max_attempts=1,
         collector_timeout_seconds=2.0,
         collector_min_host_interval=0.0,
+        # Captured fixtures carry their real, fixed publication dates.
+        retention_days=0,
     )
 
 

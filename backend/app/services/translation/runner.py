@@ -125,8 +125,13 @@ async def run_translation(
     max_per_run: int,
     max_characters: int = 0,
     translate_descriptions: bool = False,
+    published_after: datetime | None = None,
 ) -> TranslationReport:
-    """One translation pass over the newest articles that still need one."""
+    """One translation pass over the newest articles that still need one.
+
+    ``published_after`` is the retention cut-off. Budget spent on an article that has aged
+    off the site is budget not spent on one a reader will see.
+    """
     report = TranslationReport(provider=translator.name)
     if max_per_run <= 0 or translator.name == "null":
         logger.info("translation.disabled provider=%s budget=%d", translator.name, max_per_run)
@@ -137,7 +142,9 @@ async def run_translation(
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_TRANSLATIONS)
 
     for target in target_languages:
-        pending = repository.list_untranslated(target, limit=max_per_run)
+        pending = repository.list_untranslated(
+            target, limit=max_per_run, published_after=published_after
+        )
         report.articles_considered += len(pending)
         if not pending:
             continue

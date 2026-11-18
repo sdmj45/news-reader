@@ -318,28 +318,52 @@ class SQLiteArticleRepository:
         )
         return Page(articles=[_article_of(r) for r in rows], next_cursor=next_cursor)
 
-    def list_untranslated(self, target_language: str, limit: int = 50) -> list[Article]:
+    def list_untranslated(
+        self,
+        target_language: str,
+        limit: int = 50,
+        published_after: datetime | None = None,
+    ) -> list[Article]:
         """Newest articles whose licence permits a translation and that lack one.
 
-        Filtered in SQL rather than in Python: the table holds tens of thousands of rows and
-        the translation pass runs on a small budget, so reading them all to discard most
-        would be the most expensive part of a cheap operation.
+        Filtered in SQL rather than in Python: the table holds thousands of rows and the
+        translation pass runs on a small budget, so reading them all to discard most would
+        be the most expensive part of a cheap operation.
+
+        Articles already in ``target_language`` are excluded here, not skipped by the runner:
+        skipping them there meant each one held a place in the queue on every run, forever.
+        Articles whose last attempt failed come after every untried one for the same reason.
 
         ``json_extract`` is SQLite-specific. The Firestore implementation will need a
         denormalised ``translated_languages`` array instead, which is why this is not on the
         :class:`ArticleRepository` protocol as a query object - it is a named operation, and
         each backend expresses it in its own terms.
         """
+        after_clause = " AND published_at >= ?" if published_after else ""
+        params: list[object] = [f"$.{target_language}", target_language]
+        if published_after:
+            params.append(_iso(published_after))
+        params += [ProcessingStatus.TRANSLATION_FAILED.value, limit]
         rows = self._conn.execute(
-            """SELECT * FROM articles
+            f"""SELECT * FROM articles
                WHERE summary_reuse_allowed = 1
                  AND duplicate_of IS NULL
                  AND json_extract(translated_title, ?) IS NULL
-               ORDER BY published_at DESC
+                 AND language != ?{after_clause}
+               ORDER BY (processing_status = ?), published_at DESC
                LIMIT ?""",
-            (f"$.{target_language}", limit),
+            params,
         ).fetchall()
         return [_article_of(r) for r in rows]
+
+    def delete_published_before(self, cutoff: datetime) -> int:
+        stamp = _iso(cutoff)
+        deleted = self._conn.execute(
+            "DELETE FROM articles WHERE published_at < ?", (stamp,)
+        ).rowcount
+        self._conn.execute("DELETE FROM collection_runs WHERE started_at < ?", (stamp,))
+        self._conn.commit()
+        return deleted
 
     def count_translated(self, target_language: str) -> int:
         return self._conn.execute(

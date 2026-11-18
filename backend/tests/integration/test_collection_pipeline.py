@@ -49,6 +49,8 @@ def mem_settings():
     return Settings(
         sqlite_path=":memory:", collector_max_attempts=1,
         collector_min_host_interval=0.0, collector_timeout_seconds=2.0,
+        # The feeds below are dated 14 Nov 2026; retention is tested on its own.
+        retention_days=0,
     )
 
 
@@ -348,7 +350,8 @@ class TestSelection:
     @respx.mock
     async def test_only_sources_setting_restricts_the_run(self, repo):
         respx.get("https://a.test/feed.xml").mock(return_value=httpx.Response(200, text=FEED))
-        settings = Settings(sqlite_path=":memory:", collector_only_sources="wanted")
+        settings = Settings(sqlite_path=":memory:", collector_only_sources="wanted",
+                            retention_days=0)
         sources = [
             make_source("wanted", feed_url="https://a.test/feed.xml"),
             make_source("ignored", feed_url="https://b.test/feed.xml"),
@@ -472,3 +475,51 @@ class TestPollingInterval:
         second = await ingest(repo, mem_settings, [source])
         assert repo.get_source_health("test-src").consecutive_failures == 0
         assert second.sources_succeeded == 0 and second.sources_skipped == 1
+
+
+class TestRetention:
+    @staticmethod
+    def feed(*items: tuple[str, datetime]) -> str:
+        from email.utils import format_datetime
+
+        body = "".join(
+            f"<item><title>{title}</title><link>https://a.test/{i}</link>"
+            f"<pubDate>{format_datetime(published)}</pubDate></item>"
+            for i, (title, published) in enumerate(items)
+        )
+        return f'<?xml version="1.0"?><rss version="2.0"><channel><title>T</title>{body}</channel></rss>'
+
+    @respx.mock
+    async def test_items_older_than_the_window_are_not_stored(self, repo):
+        now = datetime.now(UTC)
+        respx.get("https://a.test/feed.xml").mock(return_value=httpx.Response(200, text=self.feed(
+            ("Grève à la SNCF ce matin", now - timedelta(hours=2)),
+            ("Une dépêche de la semaine dernière", now - timedelta(days=6)),
+        )))
+        settings = Settings(sqlite_path=":memory:", retention_days=2)
+        report = await ingest(repo, settings, [make_source(feed_url="https://a.test/feed.xml")])
+
+        assert report.articles_too_old == 1
+        assert [a.title for a in repo.list_articles(ArticleQuery()).articles] == [
+            "Grève à la SNCF ce matin"
+        ]
+
+    @respx.mock
+    async def test_stored_articles_that_aged_out_are_deleted(self, repo):
+        now = datetime.now(UTC)
+        from tests.conftest import make_article
+
+        repo.upsert_articles([make_article("Ancienne", "https://b.test/old",
+                                           published_at=now - timedelta(days=4))])
+        respx.get("https://a.test/feed.xml").mock(return_value=httpx.Response(200, text=self.feed(
+            ("Grève à la SNCF ce matin", now - timedelta(hours=2)),
+        )))
+        settings = Settings(sqlite_path=":memory:", retention_days=2)
+        report = await ingest(repo, settings, [make_source(feed_url="https://a.test/feed.xml")])
+
+        assert report.articles_pruned == 1
+        assert repo.count_articles() == 1
+
+    def test_zero_turns_retention_off(self):
+        assert Settings(retention_days=0).retention_cutoff() is None
+        assert Settings().retention_days == 2

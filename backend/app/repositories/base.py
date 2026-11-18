@@ -92,8 +92,17 @@ class ArticleRepository(Protocol):
         """Which of these ids are already stored. Used to skip work before enrichment."""
         ...
 
-    def list_untranslated(self, target_language: str, limit: int = 50) -> list[Article]:
+    def list_untranslated(
+        self,
+        target_language: str,
+        limit: int = 50,
+        published_after: datetime | None = None,
+    ) -> list[Article]:
         """Newest articles whose licence permits a translation and that lack one.
+
+        Excludes articles already written in ``target_language``, and puts articles whose
+        last attempt failed after every article not yet tried, so a headline the provider
+        cannot translate does not take a place in every run's queue.
 
         A named operation rather than an :class:`ArticleQuery` flag: "does this JSON object
         have this key" is expressed very differently in SQLite and in Firestore, and
@@ -102,6 +111,11 @@ class ArticleRepository(Protocol):
         ...
 
     def count_translated(self, target_language: str) -> int: ...
+
+    def delete_published_before(self, cutoff: datetime) -> int:
+        """Deletes articles published before ``cutoff``, and collection runs started before
+        it. Returns the number of articles deleted."""
+        ...
 
     def count_by_category(self, language: str | None = None) -> dict[str, int]: ...
 

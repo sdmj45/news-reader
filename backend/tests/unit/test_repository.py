@@ -245,3 +245,55 @@ class TestSecondaryCategoryFiltering:
             ArticleQuery(categories=(Category.CHINA, Category.FRANCE))
         ).articles
         assert len(found) == 3
+
+
+class TestRetention:
+    def test_deletes_articles_published_before_the_cutoff_and_keeps_the_rest(self, repo):
+        old = make_article("Vieille", "https://a.fr/old", published_at=NOW - timedelta(days=3))
+        edge = make_article("Limite", "https://a.fr/edge", published_at=NOW - timedelta(days=2))
+        new = make_article("Neuve", "https://a.fr/new", published_at=NOW)
+        repo.upsert_articles([old, edge, new])
+
+        assert repo.delete_published_before(NOW - timedelta(days=2)) == 1
+        titles = {a.title for a in repo.list_articles(ArticleQuery()).articles}
+        assert titles == {"Limite", "Neuve"}
+
+    def test_old_collection_runs_go_with_them(self, repo):
+        for run_id, age in (("old", 5), ("new", 0)):
+            repo.save_collection_run({
+                "run_id": run_id, "started_at": (NOW - timedelta(days=age)).isoformat(),
+            })
+        repo.delete_published_before(NOW - timedelta(days=2))
+        assert [r["run_id"] for r in repo.list_collection_runs()] == ["new"]
+
+
+class TestTranslationQueue:
+    @staticmethod
+    def eligible(title, url, **kwargs):
+        article = make_article(title, url, **kwargs)
+        article.summary_reuse_allowed = True
+        return article
+
+    def test_articles_already_in_the_target_language_never_take_a_place(self, repo):
+        # They used to be returned and then skipped by the runner, holding a slot each run.
+        repo.upsert_articles([
+            self.eligible("北京新闻", "https://zh.test/1", language="zh", published_at=NOW),
+            self.eligible("Dépêche", "https://a.fr/1", published_at=NOW - timedelta(hours=1)),
+        ])
+        assert [a.title for a in repo.list_untranslated("zh", limit=1)] == ["Dépêche"]
+
+    def test_articles_outside_the_window_are_not_queued(self, repo):
+        repo.upsert_articles([
+            self.eligible("Vieille", "https://a.fr/old", published_at=NOW - timedelta(days=3)),
+            self.eligible("Neuve", "https://a.fr/new", published_at=NOW),
+        ])
+        queue = repo.list_untranslated("zh", published_after=NOW - timedelta(days=2))
+        assert [a.title for a in queue] == ["Neuve"]
+
+    def test_a_failed_headline_waits_behind_every_untried_one(self, repo):
+        failed = self.eligible("Échec", "https://a.fr/failed", published_at=NOW)
+        failed.processing_status = ProcessingStatus.TRANSLATION_FAILED
+        untried = self.eligible("Pas essayée", "https://a.fr/untried",
+                                published_at=NOW - timedelta(hours=5))
+        repo.upsert_articles([failed, untried])
+        assert [a.title for a in repo.list_untranslated("zh")] == ["Pas essayée", "Échec"]

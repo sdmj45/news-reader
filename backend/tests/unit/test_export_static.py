@@ -58,7 +58,7 @@ class TestPerPublisherCap:
         # fill the page - the page wins; see
         # test_the_snapshot_is_filled_even_when_the_cap_would_leave_it_short.
         seed(repo, {"Chatty": 300, **{f"Quiet {n}": 6 for n in range(10)}})
-        selected = collect(repo, limit=40, languages=(), max_per_publisher=5)
+        selected = collect(repo, limit=40, languages=(), max_age_days=0, max_per_publisher=5)
 
         counts: dict[str, int] = {}
         for article in selected:
@@ -71,19 +71,19 @@ class TestPerPublisherCap:
         # DeepMind, OpenAI, LWN, the GitHub blog and MIT Technology Review with zero
         # articles each, while franceinfo took 54 slots.
         seed(repo, {"Chatty": 500, "Weekly": 3})
-        selected = collect(repo, limit=50, languages=(), max_per_publisher=12)
+        selected = collect(repo, limit=50, languages=(), max_age_days=0, max_per_publisher=12)
         assert any(a.publisher == "Weekly" for a in selected)
 
     def test_the_cap_widens_the_time_window(self, repo):
         seed(repo, {"Chatty": 200, "Slow": 5})
-        uncapped = collect(repo, limit=40, languages=(), max_per_publisher=0)
-        capped = collect(repo, limit=40, languages=(), max_per_publisher=10)
+        uncapped = collect(repo, limit=40, languages=(), max_age_days=0, max_per_publisher=0)
+        capped = collect(repo, limit=40, languages=(), max_age_days=0, max_per_publisher=10)
         span = lambda xs: max(a.published_at for a in xs) - min(a.published_at for a in xs)  # noqa: E731
         assert span(capped) > span(uncapped)
 
     def test_results_stay_newest_first(self, repo):
         seed(repo, {"A": 30, "B": 30, "C": 30})
-        selected = collect(repo, limit=40, languages=(), max_per_publisher=10)
+        selected = collect(repo, limit=40, languages=(), max_age_days=0, max_per_publisher=10)
         times = [a.published_at for a in selected]
         assert times == sorted(times, reverse=True)
 
@@ -91,12 +91,12 @@ class TestPerPublisherCap:
         # Two publishers, cap of 5, asking for 20: capping alone yields 10, and publishing
         # a half-empty page because of an internal rule would be the wrong trade.
         seed(repo, {"A": 50, "B": 50})
-        assert len(collect(repo, limit=20, languages=(), max_per_publisher=5)) == 20
+        assert len(collect(repo, limit=20, languages=(), max_age_days=0, max_per_publisher=5)) == 20
 
     def test_zero_disables_the_cap(self, repo):
         seed(repo, {"Chatty": 300, **{f"Quiet {n}": 6 for n in range(10)}})
-        uncapped = collect(repo, limit=40, languages=(), max_per_publisher=0)
-        capped = collect(repo, limit=40, languages=(), max_per_publisher=5)
+        uncapped = collect(repo, limit=40, languages=(), max_age_days=0, max_per_publisher=0)
+        capped = collect(repo, limit=40, languages=(), max_age_days=0, max_per_publisher=5)
 
         chatty = lambda xs: sum(1 for a in xs if a.publisher == "Chatty")  # noqa: E731
         assert chatty(uncapped) > chatty(capped)
@@ -104,7 +104,7 @@ class TestPerPublisherCap:
 
     def test_asking_for_more_than_exists_returns_what_exists(self, repo):
         seed(repo, {"A": 3, "B": 2})
-        assert len(collect(repo, limit=100, languages=(), max_per_publisher=12)) == 5
+        assert len(collect(repo, limit=100, languages=(), max_age_days=0, max_per_publisher=12)) == 5
 
 
 class TestAgeWindow:
@@ -148,3 +148,18 @@ class TestPayloadShape:
         payload = article_json(article)
         assert payload["category"] == "TECHNOLOGY"
         assert payload["secondary_categories"] == ["CHINA"]
+
+
+class TestRetentionWindow:
+    def test_the_default_window_is_two_days(self, repo):
+        repo.upsert_articles([
+            make_article("Avant-hier et plus", "https://a.test/3d",
+                         published_at=NOW - timedelta(days=3)),
+            make_article("Hier", "https://a.test/1d", published_at=NOW - timedelta(days=1)),
+        ])
+        assert [a.title for a in collect(repo, limit=50, languages=())] == ["Hier"]
+
+    def test_zero_means_no_age_limit(self, repo):
+        repo.upsert_articles([make_article("Ancienne", "https://a.test/old",
+                                           published_at=NOW - timedelta(days=30))])
+        assert len(collect(repo, limit=50, languages=(), max_age_days=0)) == 1

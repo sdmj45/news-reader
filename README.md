@@ -24,7 +24,7 @@ Chinese, read them in a browser. Nothing is deployed anywhere — read
 | Event clustering | Cross-publisher, multilingual (word tokens and CJK bigrams), links without merging |
 | Classification | 17 categories including a China desk; source section → keyword count → abstain. No AI, no cost. |
 | Licence enforcement | Conservative by default, checked twice, 52 of 55 sources metadata-only |
-| Persistence | SQLite with cursor pagination and the indexes Firestore will need |
+| Persistence | SQLite with cursor pagination and the indexes Firestore will need; keeps the last `RETENTION_DAYS` (2) days and deletes the rest |
 | Per-source health | Isolation, exponential backoff, ETag/cursor incremental collection |
 | Automated tests | **284 backend** (unit + integration + API), **23 browser end-to-end**, plus 45 live-data tests on demand |
 

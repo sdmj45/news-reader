@@ -58,6 +58,7 @@ async def main() -> int:
                 else settings.translate_max_characters_per_run
             ),
             translate_descriptions=args.descriptions or settings.translate_descriptions,
+            published_after=settings.retention_cutoff(),
         )
 
     if args.json:

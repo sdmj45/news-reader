@@ -48,9 +48,11 @@ from app.repositories.factory import build_repository
 #:     550   15       53   242     65       83   142 kB  5d16h   <- chosen
 #:     650   18       63   278     78       91   168 kB  9d17h
 #:
-#: 650 is better on every count except that its window reaches the ten-day cut-off, so the
-#: tail of the list is a fortnight old, and 168 kB is a lot to send a phone. 550 doubles
+#: 650 is better on every count except that 168 kB is a lot to send a phone. 550 doubles
 #: the frontier-technology coverage over 400 for 37 kB more.
+#:
+#: Those windows were measured before RETENTION_DAYS existed. With the default two-day
+#: window, the window is usually what binds, and the snapshot is everything recent.
 DEFAULT_LIMIT = 550
 
 #: Characters of the publisher's description kept, cut on a word boundary.
@@ -60,11 +62,6 @@ DEFAULT_LIMIT = 550
 #: What it prevents is one publisher's 1,979-character standfirst (The Guardian, measured)
 #: dominating a card in a reader built for reading the news briefly.
 DEFAULT_MAX_DESCRIPTION = 320
-
-#: Articles older than this are dropped even if the limit has not been reached. A news
-#: reader showing last month's headlines because nothing newer arrived is worse than one
-#: showing a short list.
-MAX_AGE_DAYS = 10
 
 #: Articles any one publisher may contribute to the snapshot.
 #:
@@ -149,8 +146,13 @@ def collect(
     limit: int,
     languages: tuple[str, ...],
     max_per_publisher: int = DEFAULT_MAX_PER_PUBLISHER,
+    max_age_days: int = 2,
 ) -> list[Article]:
     """The newest articles within the age window, newest first, balanced across publishers.
+
+    ``max_age_days`` is the retention window (``RETENTION_DAYS``); 0 means no age limit. A
+    news reader showing last month's headlines because nothing newer arrived is worse than
+    one showing a short list.
 
     Asks each publisher for its newest ``max_per_publisher`` and merges, rather than taking
     the newest N overall and trimming. The difference matters: trimming a global list can
@@ -162,7 +164,7 @@ def collect(
     so it does not grow with the database the way a "read five times the limit and filter"
     pass would.
     """
-    cutoff = datetime.now(UTC) - timedelta(days=MAX_AGE_DAYS)
+    cutoff = datetime.now(UTC) - timedelta(days=max_age_days) if max_age_days > 0 else None
 
     def newest(count: int, publisher: str | None = None) -> list[Article]:
         out: list[Article] = []
@@ -224,14 +226,15 @@ def main() -> int:
     settings = get_settings()
     repository = build_repository(settings)
     articles = collect(repository, args.limit, tuple(args.language),
-                       max_per_publisher=args.max_per_publisher)
+                       max_per_publisher=args.max_per_publisher,
+                       max_age_days=settings.retention_days)
 
     if not articles:
         # Writing an empty snapshot would replace a working site with a blank one. Refusing
         # leaves the previous deployment in place, which is the better failure.
         print(
             "No articles within the last "
-            f"{MAX_AGE_DAYS} days. Nothing was written, so any existing snapshot is kept. "
+            f"{settings.retention_days} days. Nothing was written, so any existing snapshot is kept. "
             "Run `python -m scripts.ingest` first.",
             file=sys.stderr,
         )

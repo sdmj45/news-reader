@@ -9,6 +9,7 @@ is how that happens.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from functools import lru_cache
 
@@ -74,7 +75,16 @@ class Settings(BaseSettings):
     translate_into: str = "zh"
     #: Articles attempted per run. The character budget below is the binding constraint;
     #: this just stops a single run walking the whole table.
-    translate_max_per_run: int = 40
+    translate_max_per_run: int = 100
+
+    #: Days of news kept, counted from publication. One window governs everything: older
+    #: articles are not collected, are deleted after each collection, are not translated and
+    #: are not exported. It has to be the same window for all four - an article deleted but
+    #: still in a feed would be collected again as new and translated again, every run.
+    #:
+    #: 0 keeps everything, which is what the tests use: their fixtures are real feeds captured
+    #: on a fixed date.
+    retention_days: int = 2
 
     #: Hard character ceiling per run, enforced before each call. **This is the setting that
     #: matters**, because the provider's limit is in characters, not articles.
@@ -135,6 +145,12 @@ class Settings(BaseSettings):
     @property
     def target_languages(self) -> tuple[str, ...]:
         return tuple(s.strip().lower() for s in self.translate_into.split(",") if s.strip())
+
+    def retention_cutoff(self, now: datetime | None = None) -> datetime | None:
+        """The oldest publication time still kept, or None when retention is off."""
+        if self.retention_days <= 0:
+            return None
+        return (now or datetime.now(UTC)) - timedelta(days=self.retention_days)
 
 
 @lru_cache(maxsize=1)
