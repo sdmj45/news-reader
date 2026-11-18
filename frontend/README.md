@@ -76,3 +76,11 @@ the thing it navigates.
 worse than news that is honestly absent.
 
 **Both themes are first-class.** This is opened early in the morning and late at night.
+
+**The mobile app is this site, installed as a PWA.** There is no app-store build. The
+"下载手机版 / Get the mobile app" button in the header adapts to the device
+([`src/services/install.ts`](src/services/install.ts)): one-tap install where the browser
+offers it (Chrome, Edge, Samsung Internet), Share → Add to Home Screen steps on iOS, an
+"open in browser" hint inside WeChat and other in-app browsers, and on a computer a QR code
+that opens the site on the phone. The button hides itself inside the installed app. The
+manifest uses relative URLs so the install works from the GitHub Pages sub-path.

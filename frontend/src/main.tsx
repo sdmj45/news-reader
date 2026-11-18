@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client'
 
 import App from './App.tsx'
 import './index.css'
+// Imported for its side effect: it must be listening for `beforeinstallprompt` before the
+// browser fires it, which can be before the first render. See services/install.ts.
+import './services/install'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

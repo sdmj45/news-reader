@@ -1,19 +1,23 @@
 {
+  "id": "./",
   "name": "Actualités françaises · 法国新闻",
-  "short_name": "Actualités",
-  "description": "French headlines with Chinese translation, linking to the original articles.",
-  "start_url": "/",
-  "scope": "/",
+  "short_name": "法国新闻",
+  "description": "French headlines with Chinese translation, linking to the original articles. 法语新闻标题，中文对照。",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "orientation": "portrait-primary",
   "background_color": "#ffffff",
   "theme_color": "#1a5fb4",
   "lang": "fr",
+  "dir": "ltr",
   "categories": ["news", "magazines"],
+  "prefer_related_applications": false,
   "icons": [
-    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
-    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "/icon-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }

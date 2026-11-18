@@ -17,6 +17,7 @@ import {
   type UiLanguage,
 } from '../i18n/strings'
 import type { CategoryCount, Health } from '../types/api'
+import { InstallButton } from './InstallApp'
 
 export type Theme = 'auto' | 'light' | 'dark'
 export type View = 'news' | 'favourites'
@@ -59,6 +60,7 @@ export function Header({ strings, view, onView, favouriteCount, onOpenSettings }
               <span className="ml-1 text-[11px] opacity-70">{favouriteCount}</span>
             )}
           </TabButton>
+          <InstallButton strings={strings} />
           <button
             type="button"
             onClick={onOpenSettings}

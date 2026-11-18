@@ -103,6 +103,19 @@ interface Strings {
   minutesAgo: string
   hoursAgo: string
   daysAgo: string
+  // Mobile app (the PWA)
+  installApp: string
+  installTitle: string
+  installIntro: string
+  installScan: string
+  installStepsIos: string[]
+  installStepsAndroid: string[]
+  installStepsInApp: string[]
+  installNow: string
+  installOnThisComputer: string
+  copyLink: string
+  linkCopied: string
+  close: string
 }
 
 const fr: Strings = {
@@ -168,6 +181,31 @@ const fr: Strings = {
   minutesAgo: 'il y a {n} min',
   hoursAgo: 'il y a {n} h',
   daysAgo: 'il y a {n} j',
+  installApp: "Télécharger l'app mobile",
+  installTitle: "L'app mobile",
+  installIntro:
+    "Aucune boutique d'applications : l'app s'installe depuis le navigateur, en quelques secondes. Elle s'ouvre en plein écran depuis l'écran d'accueil et se met à jour toute seule.",
+  installScan: "Scannez ce code avec l'appareil photo de votre téléphone, puis suivez les instructions qui s'affichent.",
+  installStepsIos: [
+    'Ouvrez cette page dans Safari.',
+    'Touchez le bouton Partager (le carré avec une flèche vers le haut).',
+    "Choisissez « Sur l'écran d'accueil », puis « Ajouter ».",
+  ],
+  installStepsAndroid: [
+    'Ouvrez cette page dans Chrome.',
+    'Touchez le menu ⋮ en haut à droite.',
+    "Choisissez « Installer l'application » ou « Ajouter à l'écran d'accueil ».",
+  ],
+  installStepsInApp: [
+    'Cette application ne peut pas installer de site.',
+    'Touchez le menu ··· en haut à droite et choisissez « Ouvrir dans le navigateur », ou copiez le lien ci-dessous.',
+    "Dans le navigateur, touchez de nouveau « Télécharger l'app mobile ».",
+  ],
+  installNow: 'Installer maintenant',
+  installOnThisComputer: 'Installer aussi sur cet ordinateur',
+  copyLink: 'Copier le lien',
+  linkCopied: 'Lien copié',
+  close: 'Fermer',
 }
 
 const zh: Strings = {
@@ -233,6 +271,30 @@ const zh: Strings = {
   minutesAgo: '{n} 分钟前',
   hoursAgo: '{n} 小时前',
   daysAgo: '{n} 天前',
+  installApp: '下载手机版',
+  installTitle: '手机版',
+  installIntro: '无需应用商店：直接从浏览器安装，几秒即可完成。安装后从主屏幕全屏打开，并会自动更新。',
+  installScan: '用手机相机扫描二维码打开本站，然后按页面提示添加到主屏幕。',
+  installStepsIos: [
+    '用 Safari 打开本页面。',
+    '点击底部的「分享」按钮（带向上箭头的方框）。',
+    '选择「添加到主屏幕」，再点「添加」。',
+  ],
+  installStepsAndroid: [
+    '用 Chrome 或系统浏览器打开本页面。',
+    '点击右上角的菜单 ⋮。',
+    '选择「安装应用」或「添加到主屏幕」。',
+  ],
+  installStepsInApp: [
+    '微信等应用内的浏览器无法安装网页应用。',
+    '点击右上角的 ···，选择「在浏览器中打开」，或复制下方链接到浏览器打开。',
+    '在浏览器中再次点击「下载手机版」。',
+  ],
+  installNow: '立即安装',
+  installOnThisComputer: '也安装到这台电脑',
+  copyLink: '复制链接',
+  linkCopied: '链接已复制',
+  close: '关闭',
 }
 
 const en: Strings = {
@@ -298,6 +360,31 @@ const en: Strings = {
   minutesAgo: '{n} min ago',
   hoursAgo: '{n} h ago',
   daysAgo: '{n} d ago',
+  installApp: 'Get the mobile app',
+  installTitle: 'The mobile app',
+  installIntro:
+    'No app store: the app installs straight from the browser in a few seconds. It opens full-screen from your home screen and updates itself.',
+  installScan: "Scan this code with your phone's camera, then follow the steps it shows.",
+  installStepsIos: [
+    'Open this page in Safari.',
+    'Tap the Share button (the square with an arrow pointing up).',
+    'Choose "Add to Home Screen", then "Add".',
+  ],
+  installStepsAndroid: [
+    'Open this page in Chrome.',
+    'Tap the ⋮ menu at the top right.',
+    'Choose "Install app" or "Add to Home screen".',
+  ],
+  installStepsInApp: [
+    "This app's built-in browser cannot install websites.",
+    'Tap ··· at the top right and choose "Open in browser", or copy the link below.',
+    'In the browser, tap "Get the mobile app" again.',
+  ],
+  installNow: 'Install now',
+  installOnThisComputer: 'Also install on this computer',
+  copyLink: 'Copy link',
+  linkCopied: 'Link copied',
+  close: 'Close',
 }
 
 export const STRINGS: Record<UiLanguage, Strings> = { fr, zh, en }

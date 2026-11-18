@@ -18,7 +18,7 @@
  * install already carrying a stale copy discards it on the next visit.
  */
 
-const SHELL_CACHE = 'newsreader-shell-v3'
+const SHELL_CACHE = 'newsreader-shell-v4'
 
 // Everything here is relative to wherever this worker is served from, because that is not
 // always the domain root: a GitHub Pages project site lives at /<repo>/. This file is in
@@ -27,7 +27,16 @@ const SHELL_CACHE = 'newsreader-shell-v3'
 const SCOPE = new URL('./', self.location.href)
 const url = (path) => new URL(path, SCOPE).pathname
 
-const SHELL_ASSETS = ['./', './index.html', './manifest.webmanifest', './icon.svg'].map(
+// The icons are in the shell because the installed app shows them on its splash screen,
+// which is exactly when the network is most likely to be missing.
+const SHELL_ASSETS = [
+  './',
+  './index.html',
+  './manifest.webmanifest',
+  './icon.svg',
+  './icon-192.png',
+  './icon-512.png',
+].map(
   (path) => new URL(path, SCOPE).href,
 )
 const INDEX = new URL('./index.html', SCOPE).href
